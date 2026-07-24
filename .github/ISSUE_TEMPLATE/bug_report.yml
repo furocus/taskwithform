@@ -1,0 +1,66 @@
+name: 不具合報告
+description: 動作上の問題や想定外の挙動を報告する
+title: '[Bug]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告ありがとうございます。再現と調査に必要な情報を入力してください。
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: どのような問題が発生したかを簡潔に記載してください。
+      placeholder: 課題を完了しても一覧から消えない
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: 問題を再現できる操作を順番に記載してください。
+      placeholder: |
+        1. 課題一覧を開く
+        2. 課題の完了ボタンを押す
+        3. 一覧を確認する
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動作
+      description: 本来どのように動作してほしいかを記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動作
+      description: 実際に起きたことや表示されたエラーを記載してください。
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: 実行環境
+      description: OS、ブラウザ、端末などを記載してください。
+      placeholder: Windows 11 / Chrome 126
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 補足
+      description: スクリーンショット、ログ、関連Issueなどがあれば追加してください。
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 確認
+      options:
+        - label: 同じ内容のIssueがないことを確認しました
+          required: true

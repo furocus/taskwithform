@@ -20,17 +20,17 @@ type: 変更内容の要約
 
 `type`には、次のいずれかを使用します。
 
-| type | 使用する変更 |
-| --- | --- |
-| `feat` | 新しい機能や画面を追加する |
-| `fix` | 不具合を修正する |
-| `docs` | READMEや設計資料だけを変更する |
-| `refactor` | 動作を変えずにコードを整理する |
-| `style` | コードの意味を変えずに書式を直す |
-| `test` | テストを追加・修正する |
-| `build` | 依存関係やビルド環境を変更する |
-| `ci` | CIの設定を変更する |
-| `chore` | 上記に当てはまらない保守作業を行う |
+| type       | 使用する変更                       |
+| ---------- | ---------------------------------- |
+| `feat`     | 新しい機能や画面を追加する         |
+| `fix`      | 不具合を修正する                   |
+| `docs`     | READMEや設計資料だけを変更する     |
+| `refactor` | 動作を変えずにコードを整理する     |
+| `style`    | コードの意味を変えずに書式を直す   |
+| `test`     | テストを追加・修正する             |
+| `build`    | 依存関係やビルド環境を変更する     |
+| `ci`       | CIの設定を変更する                 |
+| `chore`    | 上記に当てはまらない保守作業を行う |
 
 要約は日本語で簡潔に書き、末尾に句点を付けません。
 
@@ -93,3 +93,40 @@ git commit -m "type: 変更内容の要約"
 - `.codex/`や`.agents/`などの個人用設定が含まれていない
 - 変更した機能を自分の環境で確認した
 - ドキュメントと実装の内容が一致している
+- `npm run format:check`が成功する
+
+フォーマット違反がある場合は、次のコマンドで修正します。
+
+```bash
+npm run format
+```
+
+## プルリクエストとマージ
+
+`main`へ直接変更を入れず、作業ブランチからプルリクエストを作成します。
+マージには、次の条件をすべて満たす必要があります。
+
+- 1人以上の承認レビューを得る
+- GitHub Actionsの必須チェック`Prettier`が成功する
+- レビュー後に新しい変更を加えた場合は、もう一度レビューを受ける
+- 未解決のレビューコメントを残さない
+
+リポジトリ管理者は、`main`のブランチルールで次を必須にします。
+
+- `Require a pull request before merging`
+- `Required approvals`: `1`
+- `Dismiss stale pull request approvals when new commits are pushed`
+- `Require status checks to pass before merging`
+- 必須ステータスチェック: `Prettier`
+- `Require conversation resolution before merging`
+
+PRに対応するIssueがある場合は、PR本文の末尾へ次の形式で記載します。
+このPRが`main`へマージされると、指定したIssueが自動的に閉じられます。
+
+```text
+Closes #123
+```
+
+## ブランチ名のルール
+
+実装内容(ex:feature)/issue番号(ex:2)-実装内容（ex:login-page)
