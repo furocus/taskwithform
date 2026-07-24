@@ -128,4 +128,5 @@ Closes #123
 ```
 
 ## ブランチ名のルール
+
 実装内容(ex:feature)/issue番号(ex:2)-実装内容（ex:login-page)
