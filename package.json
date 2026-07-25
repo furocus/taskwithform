@@ -2,6 +2,11 @@
   "name": "taskwithform",
   "private": true,
   "scripts": {
+    "dev": "vite",
+    "dev:frontend": "vite --host localhost --port 5173",
+    "dev:backend": "node --watch backend/server.mjs",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
@@ -15,7 +20,7 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "vite": "^8.1.5",
     "vue-tsc": "^3.3.8"
   }
