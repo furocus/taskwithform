@@ -34,3 +34,4 @@ Thumbs.db
 # Local AI tool settings
 .codex/
 .agents/
+skills-lock.json
