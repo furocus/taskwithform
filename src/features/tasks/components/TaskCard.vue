@@ -5,10 +5,10 @@ const {
   deadline = '未設定',
   submissionTarget = '未設定',
 } = defineProps<{
-  title?: string;
-  deadline?: string;
-  submissionTarget?: string;
-}>();
+  title?: string
+  deadline?: string
+  submissionTarget?: string
+}>()
 </script>
 
 <template>
