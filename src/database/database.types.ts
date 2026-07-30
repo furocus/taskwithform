@@ -1,5 +1,7 @@
+/** A calendar date serialized as YYYY-MM-DD for IndexedDB ordering. */
 export type DateOnly = string
 
+/** An absolute timestamp serialized as an ISO 8601 string. */
 export type IsoDateTime = string
 
 export type TaskStatus = 'unsubmitted' | 'submitted'
@@ -33,7 +35,7 @@ export interface SyncState {
   fetchedDate: DateOnly
 }
 
-export type TaskRecordInput = Omit<TaskRecord, 'id' | 'externalKey'>
+export type TaskRecordInput = Omit<TaskRecord, 'id' | 'externalKey' | 'source'>
 
 export interface CourseTaskSnapshot {
   courseId: string

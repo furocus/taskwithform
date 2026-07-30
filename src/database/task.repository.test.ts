@@ -10,7 +10,6 @@ function createTaskInput(
   overrides: Partial<TaskRecordInput> = {},
 ): TaskRecordInput {
   return {
-    source: 'google-classroom',
     courseId: 'course-1',
     courseName: '数学I',
     courseWorkId: 'work-1',
