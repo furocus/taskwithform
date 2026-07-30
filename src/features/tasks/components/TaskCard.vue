@@ -38,9 +38,9 @@ const {
   display: flex;
   align-items: stretch;
   width: 100%;
-  background-color: #ffffff;
+  background-color: var(--color-bg-surface, #ffffff);
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px var(--color-shadow, rgba(0, 0, 0, 0.08));
   overflow: hidden;
 }
 
@@ -48,7 +48,7 @@ const {
 .task-card__line {
   width: 4px;
   flex-shrink: 0;
-  background-color: #ef4444;
+  background-color: var(--color-danger, #ef4444);
 }
 
 .task-card__body {
@@ -61,7 +61,7 @@ const {
   margin: 0 0 12px;
   font-size: 1rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--color-text-primary, #111827);
   overflow-wrap: break-word;
 }
 
@@ -76,13 +76,13 @@ const {
   align-items: baseline;
   gap: 8px;
   font-size: 0.875rem;
-  color: #4b5563;
+  color: var(--color-text-secondary, #4b5563);
 }
 
 .task-card__row dt {
   flex-shrink: 0;
   font-weight: 600;
-  color: #374151;
+  color: var(--color-text-body, #374151);
 }
 
 .task-card__row dd {
