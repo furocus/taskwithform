@@ -7,7 +7,9 @@ import TaskCard from './TaskCard.vue'
   <section class="space-y-4">
     <div class="flex items-center justify-between">
       <p class="section-caption">期限が近い順</p>
-      <span class="text-xs text-[color:var(--color-text-tertiary)]">{{ mockTasks.length }}件</span>
+      <span class="text-xs text-[color:var(--color-text-tertiary)]"
+        >{{ mockTasks.length }}件</span
+      >
     </div>
 
     <div class="space-y-3">
