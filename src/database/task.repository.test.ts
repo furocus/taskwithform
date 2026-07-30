@@ -85,7 +85,7 @@ describe('TaskRepository', () => {
     expect(new Set(tasks.map((task) => task.externalKey)).size).toBe(2)
   })
 
-  it('updates and deletes only the course whose snapshot succeeded', async () => {
+  it('deletes only target course tasks when replacing it with an empty snapshot', async () => {
     await repository.replaceCourseSnapshot({
       courseId: 'course-1',
       fetchedDate: '2026-07-25',
@@ -114,6 +114,38 @@ describe('TaskRepository', () => {
     expect(await repository.getSyncStates()).toEqual([
       { courseId: 'course-1', fetchedDate: '2026-07-26' },
       { courseId: 'course-2', fetchedDate: '2026-07-25' },
+    ])
+  })
+
+  it('rolls back when a task courseId does not match its snapshot', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-25',
+      tasks: [createTaskInput()],
+    })
+
+    await expect(
+      repository.replaceCourseSnapshot({
+        courseId: 'course-1',
+        fetchedDate: '2026-07-26',
+        tasks: [
+          createTaskInput({
+            courseId: 'course-2',
+            courseName: '英語',
+          }),
+        ],
+      }),
+    ).rejects.toThrow('does not match task courseId')
+
+    expect(await repository.getAllTasks()).toMatchObject([
+      {
+        courseId: 'course-1',
+        courseName: '数学I',
+        courseWorkId: 'work-1',
+      },
+    ])
+    expect(await repository.getSyncStates()).toEqual([
+      { courseId: 'course-1', fetchedDate: '2026-07-25' },
     ])
   })
 
@@ -240,6 +272,12 @@ describe('TaskRepository', () => {
     expect(tasks.map((task) => task.courseWorkId)).toEqual(['inside'])
   })
 
+  it('rejects a calendar range whose start date is after its end date', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-07-31', '2026-07-26'),
+    ).rejects.toThrow('startDate must not be after endDate')
+  })
+
   it('rolls back a duplicate snapshot and strips unexpected personal fields', async () => {
     const unsafeTask = {
       ...createTaskInput(),
@@ -262,6 +300,7 @@ describe('TaskRepository', () => {
     ).rejects.toThrow('duplicate task')
 
     const [task] = await repository.getAllTasks()
+    expect(task?.source).toBe('google-classroom')
     expect(task).not.toHaveProperty('userId')
     expect(task).not.toHaveProperty('email')
     expect(await repository.getSyncStates()).toEqual([
@@ -269,7 +308,7 @@ describe('TaskRepository', () => {
     ])
   })
 
-  it('clears tasks and sync state together on logout', async () => {
+  it('clears tasks and sync state together', async () => {
     await repository.replaceCourseSnapshot({
       courseId: 'course-1',
       fetchedDate: '2026-07-26',
