@@ -1,8 +1,9 @@
 @import 'tailwindcss';
+@import './tokens.css';
 
 :root {
-  color: #172033;
-  background: #f4f7fb;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-base);
   font-family:
     Inter,
     ui-sans-serif,
@@ -19,6 +20,25 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-base);
+  background-image:
+    repeating-linear-gradient(
+      180deg,
+      var(--color-notebook-line) 0,
+      var(--color-notebook-line) 1px,
+      transparent 1px,
+      transparent 24px
+    );
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--color-notebook-margin), var(--color-danger));
+  pointer-events: none;
 }
 
 button,
@@ -26,4 +46,119 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+button,
+a,
+[role='button'] {
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled {
+  color: var(--color-disabled);
+  background-color: var(--color-disabled-bg);
+  cursor: not-allowed;
+}
+
+.app-shell {
+  min-height: 100vh;
+  background-color: var(--color-bg-base);
+}
+
+.panel-card {
+  border: 1px solid var(--color-border-soft);
+  background-color: var(--color-card-bg);
+  box-shadow: 0 8px 24px var(--color-card-shadow);
+  border-radius: 12px;
+}
+
+.card-interactive:hover {
+  background-color: var(--color-card-bg-hover);
+}
+
+.card-interactive:active {
+  background-color: var(--color-card-bg-active);
+}
+
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  padding: 0.375rem 0.7rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.section-caption {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  border: 0;
+}
+
+.icon-button--bell {
+  background-color: var(--color-btn-bell-bg);
+  color: var(--color-danger);
+}
+
+.icon-button--calendar {
+  background-color: var(--color-btn-calendar-bg);
+  color: var(--color-btn-calendar-icon);
+}
+
+.text-accent {
+  color: var(--color-danger);
+}
+
+.text-muted-number {
+  color: var(--color-text-muted);
+}
+
+.section-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.section-divider::before,
+.section-divider::after {
+  content: '';
+  flex: 1 1 0%;
+  height: 1px;
+  background-color: var(--color-border-soft);
+}
+
+#app {
+  min-height: 100vh;
+  background-color: var(--color-bg-canvas);
 }
