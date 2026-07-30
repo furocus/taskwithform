@@ -1,13 +1,8 @@
 <script setup lang="ts">
-// Vue 3.4+ の Props リアクティブ分割代入記法
-const {
-  title = '課題名未設定',
-  deadline = '未設定',
-  submissionTarget = '未設定',
-} = defineProps<{
-  title?: string
-  deadline?: string
-  submissionTarget?: string
+import type { Task } from '../task.types'
+
+const props = defineProps<{
+  task: Task
 }>()
 </script>
 
