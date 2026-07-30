@@ -1,0 +1,71 @@
+:root {
+  /* 背景・ノート用紙 */
+  --color-bg-base: #f9f8f3;
+  --color-bg-canvas: #fbf9f4;
+  --color-bg-subtle: #f4f0e5;
+  --color-notebook-line: #e8e5dc;
+  --color-note-line: var(--color-notebook-line);
+  --color-notebook-margin: #f1a5a5;
+  --color-note-margin: var(--color-notebook-margin);
+
+  /* カード・コンポーネント背景 */
+  --color-card-bg: #ffffff;
+  --color-card-bg-hover: #faf8f3;
+  --color-card-bg-active: #f1ebdc;
+  --color-card-shadow: rgba(0, 0, 0, 0.04);
+  --color-border-soft: #ece7dc;
+
+  /* テキストカラー */
+  --color-text-primary: #1f2329;
+  --color-text-secondary: #8c8f94;
+  --color-text-tertiary: #afb3b8;
+  --color-text-muted: var(--color-text-tertiary);
+  --color-text-inverse: #ffffff;
+
+  /* 強調・アラート */
+  --color-danger: #d95338;
+  --color-danger-soft: #fde8e8;
+  --color-warning: #e07a5f;
+  --color-warning-soft: #fbe8db;
+
+  /* 科目・タグ別アクセント */
+  --color-tag-c-bg: #fde8e8;
+  --color-tag-c-text: #d95338;
+  --color-tag-algo-bg: #e8ebf5;
+  --color-tag-algo-text: #4a5568;
+  --color-tag-ict-bg: #e3f2ed;
+  --color-tag-ict-text: #3b7a57;
+
+  /* ヘッダー・ボタンアイコン */
+  --color-btn-bell-bg: #fde8e8;
+  --color-btn-calendar-bg: #353945;
+  --color-btn-calendar-icon: #ffffff;
+  --color-badge-count: #d95338;
+
+  /* Semantic aliases */
+  --color-accent: var(--color-danger);
+  --color-accent-strong: #b5402f;
+  --color-accent-soft: var(--color-danger-soft);
+  --color-success: #3b7a57;
+  --color-success-soft: #e3f2ed;
+  --color-info: #4a5568;
+  --color-info-soft: #e8ebf5;
+  --color-orange: #e07a5f;
+  --color-orange-soft: #fbe8db;
+  --color-navy: #353945;
+  --color-navy-soft: #e8ebf5;
+  --color-green: #3b7a57;
+  --color-green-soft: #e3f2ed;
+  --color-pink: #d95338;
+  --color-pink-soft: #fde8e8;
+  --color-purple: #4a5568;
+  --color-purple-soft: #e8ebf5;
+
+  /* States */
+  --color-hover-overlay: rgba(31, 35, 41, 0.05);
+  --color-active-overlay: rgba(31, 35, 41, 0.09);
+  --color-disabled: #b9b0a6;
+  --color-disabled-bg: #efe9dc;
+  --color-focus-ring: rgba(217, 83, 56, 0.28);
+  --color-focus-ring-strong: #d95338;
+}

@@ -7,6 +7,8 @@ import {
   getClassroomCourseCount,
   logoutSession,
 } from '../features/auth/auth.api'
+import TaskCard from '../features/tasks/components/TaskCard.vue'
+import { mockTasks } from '../mocks/tasks'
 
 const router = useRouter()
 const courseCount = ref<number>()
@@ -68,19 +70,24 @@ onMounted(loadCourseCount)
   <section>
     <p class="text-sm font-semibold text-indigo-600">HOME</p>
     <h1 class="mt-2 text-3xl font-bold text-slate-900">メイン画面</h1>
-    <p class="mt-4 text-slate-600">
-      Google Classroomとの接続状態を確認できます。
-    </p>
+    <p class="mt-4 text-slate-600">課題一覧を表示するページです。</p>
 
-    <div
-      class="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-      aria-live="polite"
-    >
+    <div class="mt-6 space-y-4">
+      <TaskCard
+        v-for="task in mockTasks"
+        :key="task.title"
+        :title="task.title"
+        :deadline="task.deadline"
+        :submission-target="task.submissionTarget"
+      />
+    </div>
+
+    <div class="mt-8 border-t border-slate-200 pt-6" aria-live="polite">
       <p class="text-sm font-medium text-slate-600">ACTIVEなClassroomコース</p>
       <p v-if="loading" class="mt-2 text-slate-500">取得中です…</p>
       <p
         v-else-if="courseCount !== undefined"
-        class="mt-2 text-4xl font-bold text-slate-900"
+        class="mt-2 text-2xl font-bold text-slate-900"
       >
         {{ courseCount }}件
       </p>
