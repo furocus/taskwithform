@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import TaskCard from '../features/tasks/components/TaskCard.vue'
+import { mockTasks } from '../mocks/tasks'
 </script>
 
 <template>
@@ -8,11 +9,13 @@ import TaskCard from '../features/tasks/components/TaskCard.vue'
     <h1 class="mt-2 text-3xl font-bold text-slate-900">メイン画面</h1>
     <p class="mt-4 text-slate-600">課題一覧を表示するページです。</p>
 
-    <div class="mt-6">
+    <div class="mt-6 space-y-4">
       <TaskCard
-        title="USK"
-        deadline="12/34"
-        submissionTarget="ウソの宿題や課題"
+        v-for="task in mockTasks"
+        :key="task.title"
+        :title="task.title"
+        :deadline="task.deadline"
+        :submission-target="task.submissionTarget"
       />
     </div>
   </section>
