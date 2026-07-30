@@ -7,6 +7,10 @@ import {
 } from './config.mjs'
 import { createGoogleOAuthService } from './auth/google-oauth.mjs'
 import { MemorySessionStore } from './auth/session-store.mjs'
+import {
+  ClassroomRequestError,
+  createGoogleClassroomService,
+} from './classroom/google-classroom.mjs'
 
 const SESSION_COOKIE_NAME = 'taskwithform.sid'
 const PENDING_SESSION_MAX_AGE_SECONDS = 10 * 60
@@ -96,15 +100,22 @@ export function createRequestHandler({
   stateFactory = createState,
   sessionStore = new MemorySessionStore({ now }),
   oauthServiceFactory = createGoogleOAuthService,
+  classroomServiceFactory = createGoogleClassroomService,
   logger = console,
 } = {}) {
   const serverConfig = loadServerConfig(environment)
   const secureCookie = environment.NODE_ENV === 'production'
   let oauthService
+  let classroomService
 
   function getOAuthService() {
     oauthService ??= oauthServiceFactory(loadGoogleOAuthConfig(environment))
     return oauthService
+  }
+
+  function getClassroomService() {
+    classroomService ??= classroomServiceFactory()
+    return classroomService
   }
 
   function readSessionId(request) {
@@ -263,6 +274,78 @@ export function createRequestHandler({
           authenticated: true,
           expiresAt: new Date(session.expiresAt).toISOString(),
         })
+        return
+      }
+
+      if (
+        request.method === 'GET' &&
+        requestUrl.pathname === '/api/classroom/courses/count'
+      ) {
+        const sessionId = readSessionId(request)
+        const session =
+          sessionId === undefined
+            ? undefined
+            : sessionStore.getAuthenticated(sessionId)
+
+        if (session === undefined) {
+          sendJson(
+            response,
+            401,
+            {
+              error: {
+                code: 'unauthenticated',
+                message: 'Authentication is required.',
+              },
+            },
+            { 'Set-Cookie': clearSessionCookie(secureCookie) },
+          )
+          return
+        }
+
+        try {
+          const count = await getClassroomService().countActiveCourses(
+            session.accessToken,
+          )
+          sendJson(response, 200, { count })
+        } catch (error) {
+          if (error instanceof ClassroomRequestError && error.status === 401) {
+            sessionStore.delete(sessionId)
+            sendJson(
+              response,
+              401,
+              {
+                error: {
+                  code: 'session_expired',
+                  message: 'The Google session has expired.',
+                },
+              },
+              { 'Set-Cookie': clearSessionCookie(secureCookie) },
+            )
+            return
+          }
+
+          if (error instanceof ClassroomRequestError && error.status === 403) {
+            sendJson(response, 403, {
+              error: {
+                code: 'classroom_forbidden',
+                message: 'Google Classroom access was denied.',
+              },
+            })
+            return
+          }
+
+          if (error instanceof ClassroomRequestError) {
+            sendJson(response, 502, {
+              error: {
+                code: 'classroom_unavailable',
+                message: 'Google Classroom is temporarily unavailable.',
+              },
+            })
+            return
+          }
+
+          throw error
+        }
         return
       }
 

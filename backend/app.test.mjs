@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createRequestHandler } from './app.mjs'
 import { MemorySessionStore } from './auth/session-store.mjs'
+import { ClassroomRequestError } from './classroom/google-classroom.mjs'
 
 const FRONTEND_ORIGIN = 'http://localhost:5173'
 const NOW = Date.parse('2026-07-30T08:00:00.000Z')
@@ -17,6 +18,13 @@ function createFakeOAuthService(overrides = {}) {
       expiresAt: NOW + 60 * 60 * 1000,
     })),
     revokeAccessToken: vi.fn(async () => {}),
+    ...overrides,
+  }
+}
+
+function createFakeClassroomService(overrides = {}) {
+  return {
+    countActiveCourses: vi.fn(async () => 3),
     ...overrides,
   }
 }
@@ -64,12 +72,14 @@ function readCookie(response) {
 describe('backend authentication routes', () => {
   let now
   let oauthService
+  let classroomService
   let logger
   let handler
 
   beforeEach(() => {
     now = NOW
     oauthService = createFakeOAuthService()
+    classroomService = createFakeClassroomService()
     logger = {
       error: vi.fn(),
       warn: vi.fn(),
@@ -85,6 +95,7 @@ describe('backend authentication routes', () => {
       stateFactory: () => 'state-value',
       sessionStore,
       oauthServiceFactory: () => oauthService,
+      classroomServiceFactory: () => classroomService,
       logger,
     })
   })
@@ -255,6 +266,114 @@ describe('backend authentication routes', () => {
 
     expect(response.json()).toEqual({ authenticated: false })
     expect(response.header('set-cookie')).toContain('Max-Age=0')
+  })
+
+  it('rejects a Classroom count request without a session', async () => {
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/courses/count',
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.json()).toMatchObject({
+      error: { code: 'unauthenticated' },
+    })
+    expect(classroomService.countActiveCourses).not.toHaveBeenCalled()
+  })
+
+  it('returns only the active Classroom course count', async () => {
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/courses/count',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.json()).toEqual({ count: 3 })
+    expect(classroomService.countActiveCourses).toHaveBeenCalledWith(
+      'access-token',
+    )
+  })
+
+  it('clears the session after a Classroom unauthorized response', async () => {
+    classroomService.countActiveCourses.mockRejectedValueOnce(
+      new ClassroomRequestError('upstream_error', { status: 401 }),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/courses/count',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.json()).toMatchObject({
+      error: { code: 'session_expired' },
+    })
+    expect(response.header('set-cookie')).toContain('Max-Age=0')
+
+    const sessionResponse = await sendRequest(handler, {
+      url: '/api/auth/session',
+      headers: { cookie: sessionCookie },
+    })
+    expect(sessionResponse.json()).toEqual({ authenticated: false })
+  })
+
+  it('maps a Classroom forbidden response without clearing the session', async () => {
+    classroomService.countActiveCourses.mockRejectedValueOnce(
+      new ClassroomRequestError('upstream_error', { status: 403 }),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/courses/count',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(403)
+    expect(response.json()).toMatchObject({
+      error: { code: 'classroom_forbidden' },
+    })
+
+    const sessionResponse = await sendRequest(handler, {
+      url: '/api/auth/session',
+      headers: { cookie: sessionCookie },
+    })
+    expect(sessionResponse.json()).toMatchObject({ authenticated: true })
+  })
+
+  it('maps Classroom network and server failures to a safe gateway error', async () => {
+    classroomService.countActiveCourses.mockRejectedValueOnce(
+      new ClassroomRequestError('network_error'),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/courses/count',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(502)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'classroom_unavailable',
+        message: 'Google Classroom is temporarily unavailable.',
+      },
+    })
+
+    classroomService.countActiveCourses.mockRejectedValueOnce(
+      new ClassroomRequestError('upstream_error', { status: 500 }),
+    )
+
+    const serverErrorResponse = await sendRequest(handler, {
+      url: '/api/classroom/courses/count',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(serverErrorResponse.status).toBe(502)
+    expect(serverErrorResponse.json()).toMatchObject({
+      error: { code: 'classroom_unavailable' },
+    })
   })
 
   it('clears the session even when Google token revocation fails', async () => {
