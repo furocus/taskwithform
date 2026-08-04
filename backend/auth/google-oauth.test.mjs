@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+  GOOGLE_OAUTH_SCOPES,
   createGoogleOAuthService,
 } from './google-oauth.mjs'
 
 describe('Google OAuth service', () => {
-  it('creates an online authorization URL with only the courses scope', () => {
+  it('creates an online authorization URL with readonly Classroom and Gmail scopes', () => {
     const service = createGoogleOAuthService({
       clientId: 'client-id',
       clientSecret: 'client-secret',
@@ -22,8 +22,8 @@ describe('Google OAuth service', () => {
     expect(authorizationUrl.searchParams.get('include_granted_scopes')).toBe(
       'true',
     )
-    expect(authorizationUrl.searchParams.get('scope')).toBe(
-      GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+    expect(authorizationUrl.searchParams.get('scope')?.split(' ')).toEqual(
+      GOOGLE_OAUTH_SCOPES,
     )
     expect(authorizationUrl.searchParams.get('state')).toBe('state-value')
   })
