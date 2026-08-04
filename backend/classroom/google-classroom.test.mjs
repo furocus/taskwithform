@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   ClassroomRequestError,
   createGoogleClassroomService,
+  extractGoogleFormId,
 } from './google-classroom.mjs'
 
 function createJsonResponse(body, status = 200) {
@@ -14,6 +15,16 @@ function createJsonResponse(body, status = 200) {
 }
 
 describe('Google Classroom service', () => {
+  it.each([
+    ['https://docs.google.com/forms/d/form-id/edit', 'form-id'],
+    [
+      'https://docs.google.com/forms/d/e/published-form-id/viewform?usp=sharing',
+      'published-form-id',
+    ],
+  ])('extracts a Form ID from %s', (formUrl, expectedFormId) => {
+    expect(extractGoogleFormId(formUrl)).toBe(expectedFormId)
+  })
+
   it('counts active courses across every response page', async () => {
     const fetchImplementation = vi
       .fn()
@@ -53,6 +64,129 @@ describe('Google Classroom service', () => {
     })
 
     await expect(service.countActiveCourses('access-token')).resolves.toBe(0)
+  })
+
+  it('lists published course work and extracts attached Form IDs across pages', async () => {
+    const fetchImplementation = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          courses: [{ id: 'course/1', name: '数学' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          courseWork: [
+            {
+              id: 'work-1',
+              title: '確認テスト',
+              description: 'Google Formに回答してください。',
+              alternateLink: 'https://classroom.google.com/example',
+              dueDate: { year: 2026, month: 8, day: 9 },
+              workType: 'ASSIGNMENT',
+              materials: [
+                {
+                  form: {
+                    formUrl:
+                      'https://docs.google.com/forms/d/e/published-id/viewform',
+                  },
+                },
+                {},
+              ],
+            },
+          ],
+          nextPageToken: 'course-work-page-2',
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          courseWork: [
+            {
+              id: 'work-2',
+              title: '資料確認',
+              workType: 'ASSIGNMENT',
+            },
+          ],
+        }),
+      )
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listCourseWorkWithForms('access-token'),
+    ).resolves.toEqual([
+      {
+        courseId: 'course/1',
+        courseName: '数学',
+        courseWorkId: 'work-1',
+        courseWorkType: 'ASSIGNMENT',
+        title: '確認テスト',
+        description: 'Google Formに回答してください。',
+        alternateLink: 'https://classroom.google.com/example',
+        dueDate: '2026-08-09',
+        forms: [
+          {
+            formId: 'published-id',
+            formUrl: 'https://docs.google.com/forms/d/e/published-id/viewform',
+          },
+        ],
+      },
+      {
+        courseId: 'course/1',
+        courseName: '数学',
+        courseWorkId: 'work-2',
+        courseWorkType: 'ASSIGNMENT',
+        title: '資料確認',
+        forms: [],
+      },
+    ])
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(3)
+    const courseRequestUrl = fetchImplementation.mock.calls[0][0]
+    expect(courseRequestUrl.searchParams.get('courseStates')).toBe('ACTIVE')
+    expect(courseRequestUrl.searchParams.get('fields')).toBe(
+      'nextPageToken,courses(id,name)',
+    )
+
+    const firstCourseWorkUrl = fetchImplementation.mock.calls[1][0]
+    expect(firstCourseWorkUrl.pathname).toBe(
+      '/v1/courses/course%2F1/courseWork',
+    )
+    expect(firstCourseWorkUrl.searchParams.get('courseWorkStates')).toBe(
+      'PUBLISHED',
+    )
+    expect(firstCourseWorkUrl.searchParams.get('fields')).not.toContain(
+      'responseUrl',
+    )
+    expect(
+      fetchImplementation.mock.calls[2][0].searchParams.get('pageToken'),
+    ).toBe('course-work-page-2')
+  })
+
+  it('rejects an unrecognized Form URL instead of returning an incorrect ID', async () => {
+    const fetchImplementation = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createJsonResponse({ courses: [{ id: 'course-1', name: '数学' }] }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          courseWork: [
+            {
+              id: 'work-1',
+              title: '確認テスト',
+              workType: 'ASSIGNMENT',
+              materials: [
+                { form: { formUrl: 'https://forms.example/form-id' } },
+              ],
+            },
+          ],
+        }),
+      )
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listCourseWorkWithForms('access-token'),
+    ).rejects.toMatchObject({ code: 'invalid_response' })
   })
 
   it('preserves an upstream HTTP status without reading its body', async () => {

@@ -25,6 +25,7 @@ function createFakeOAuthService(overrides = {}) {
 function createFakeClassroomService(overrides = {}) {
   return {
     countActiveCourses: vi.fn(async () => 3),
+    listCourseWorkWithForms: vi.fn(async () => []),
     ...overrides,
   }
 }
@@ -373,6 +374,69 @@ describe('backend authentication routes', () => {
     expect(serverErrorResponse.status).toBe(502)
     expect(serverErrorResponse.json()).toMatchObject({
       error: { code: 'classroom_unavailable' },
+    })
+  })
+
+  it('returns Classroom course work and Form IDs to an authenticated user', async () => {
+    const courseWork = [
+      {
+        courseId: 'course-1',
+        courseName: '数学',
+        courseWorkId: 'work-1',
+        courseWorkType: 'ASSIGNMENT',
+        title: '確認テスト',
+        forms: [
+          {
+            formId: 'form-id',
+            formUrl: 'https://docs.google.com/forms/d/form-id/viewform',
+          },
+        ],
+      },
+    ]
+    classroomService.listCourseWorkWithForms.mockResolvedValueOnce(courseWork)
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/coursework/forms',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.json()).toEqual({ courseWork })
+    expect(classroomService.listCourseWorkWithForms).toHaveBeenCalledWith(
+      'access-token',
+    )
+  })
+
+  it('requires authentication before listing Classroom course work', async () => {
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/coursework/forms',
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.json()).toMatchObject({
+      error: { code: 'unauthenticated' },
+    })
+    expect(classroomService.listCourseWorkWithForms).not.toHaveBeenCalled()
+  })
+
+  it('maps a Classroom course work permission error safely', async () => {
+    classroomService.listCourseWorkWithForms.mockRejectedValueOnce(
+      new ClassroomRequestError('upstream_error', { status: 403 }),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/coursework/forms',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(403)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'classroom_forbidden',
+        message: 'Google Classroom access was denied.',
+      },
     })
   })
 

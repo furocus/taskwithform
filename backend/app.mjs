@@ -350,6 +350,79 @@ export function createRequestHandler({
       }
 
       if (
+        request.method === 'GET' &&
+        requestUrl.pathname === '/api/classroom/coursework/forms'
+      ) {
+        const sessionId = readSessionId(request)
+        const session =
+          sessionId === undefined
+            ? undefined
+            : sessionStore.getAuthenticated(sessionId)
+
+        if (session === undefined) {
+          sendJson(
+            response,
+            401,
+            {
+              error: {
+                code: 'unauthenticated',
+                message: 'Authentication is required.',
+              },
+            },
+            { 'Set-Cookie': clearSessionCookie(secureCookie) },
+          )
+          return
+        }
+
+        try {
+          const courseWork =
+            await getClassroomService().listCourseWorkWithForms(
+              session.accessToken,
+            )
+          sendJson(response, 200, { courseWork })
+        } catch (error) {
+          if (error instanceof ClassroomRequestError && error.status === 401) {
+            sessionStore.delete(sessionId)
+            sendJson(
+              response,
+              401,
+              {
+                error: {
+                  code: 'session_expired',
+                  message: 'The Google session has expired.',
+                },
+              },
+              { 'Set-Cookie': clearSessionCookie(secureCookie) },
+            )
+            return
+          }
+
+          if (error instanceof ClassroomRequestError && error.status === 403) {
+            sendJson(response, 403, {
+              error: {
+                code: 'classroom_forbidden',
+                message: 'Google Classroom access was denied.',
+              },
+            })
+            return
+          }
+
+          if (error instanceof ClassroomRequestError) {
+            sendJson(response, 502, {
+              error: {
+                code: 'classroom_unavailable',
+                message: 'Google Classroom is temporarily unavailable.',
+              },
+            })
+            return
+          }
+
+          throw error
+        }
+        return
+      }
+
+      if (
         request.method === 'POST' &&
         requestUrl.pathname === '/api/auth/logout'
       ) {
