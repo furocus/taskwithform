@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRequestHandler } from './app.mjs'
 import { MemorySessionStore } from './auth/session-store.mjs'
 import { ClassroomRequestError } from './classroom/google-classroom.mjs'
+import { GmailRequestError } from './gmail/google-gmail.mjs'
 
 const FRONTEND_ORIGIN = 'http://localhost:5173'
 const NOW = Date.parse('2026-07-30T08:00:00.000Z')
@@ -26,6 +27,13 @@ function createFakeClassroomService(overrides = {}) {
   return {
     countActiveCourses: vi.fn(async () => 3),
     listCourseWorkWithForms: vi.fn(async () => []),
+    ...overrides,
+  }
+}
+
+function createFakeGmailService(overrides = {}) {
+  return {
+    checkConnection: vi.fn(async () => {}),
     ...overrides,
   }
 }
@@ -74,6 +82,7 @@ describe('backend authentication routes', () => {
   let now
   let oauthService
   let classroomService
+  let gmailService
   let logger
   let handler
 
@@ -81,6 +90,7 @@ describe('backend authentication routes', () => {
     now = NOW
     oauthService = createFakeOAuthService()
     classroomService = createFakeClassroomService()
+    gmailService = createFakeGmailService()
     logger = {
       error: vi.fn(),
       warn: vi.fn(),
@@ -97,6 +107,7 @@ describe('backend authentication routes', () => {
       sessionStore,
       oauthServiceFactory: () => oauthService,
       classroomServiceFactory: () => classroomService,
+      gmailServiceFactory: () => gmailService,
       logger,
     })
   })
@@ -436,6 +447,89 @@ describe('backend authentication routes', () => {
       error: {
         code: 'classroom_forbidden',
         message: 'Google Classroom access was denied.',
+      },
+    })
+  })
+
+  it('confirms Gmail connectivity without returning profile data', async () => {
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.json()).toEqual({ connected: true })
+    expect(gmailService.checkConnection).toHaveBeenCalledWith('access-token')
+  })
+
+  it('requires authentication before checking Gmail connectivity', async () => {
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.json()).toMatchObject({
+      error: { code: 'unauthenticated' },
+    })
+    expect(gmailService.checkConnection).not.toHaveBeenCalled()
+  })
+
+  it('maps Gmail permission errors without exposing upstream details', async () => {
+    gmailService.checkConnection.mockRejectedValueOnce(
+      new GmailRequestError('upstream_error', { status: 403 }),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(403)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'gmail_forbidden',
+        message: 'Gmail access was denied.',
+      },
+    })
+  })
+
+  it('clears the session after a Gmail unauthorized response', async () => {
+    gmailService.checkConnection.mockRejectedValueOnce(
+      new GmailRequestError('upstream_error', { status: 401 }),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.json()).toMatchObject({
+      error: { code: 'session_expired' },
+    })
+    expect(response.header('set-cookie')).toContain('Max-Age=0')
+  })
+
+  it('maps Gmail network failures to a safe gateway error', async () => {
+    gmailService.checkConnection.mockRejectedValueOnce(
+      new GmailRequestError('network_error'),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(502)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'gmail_unavailable',
+        message: 'Gmail is temporarily unavailable.',
       },
     })
   })

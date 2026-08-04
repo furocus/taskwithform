@@ -11,6 +11,10 @@ import {
   ClassroomRequestError,
   createGoogleClassroomService,
 } from './classroom/google-classroom.mjs'
+import {
+  GmailRequestError,
+  createGoogleGmailService,
+} from './gmail/google-gmail.mjs'
 
 const SESSION_COOKIE_NAME = 'taskwithform.sid'
 const PENDING_SESSION_MAX_AGE_SECONDS = 10 * 60
@@ -101,12 +105,14 @@ export function createRequestHandler({
   sessionStore = new MemorySessionStore({ now }),
   oauthServiceFactory = createGoogleOAuthService,
   classroomServiceFactory = createGoogleClassroomService,
+  gmailServiceFactory = createGoogleGmailService,
   logger = console,
 } = {}) {
   const serverConfig = loadServerConfig(environment)
   const secureCookie = environment.NODE_ENV === 'production'
   let oauthService
   let classroomService
+  let gmailService
 
   function getOAuthService() {
     oauthService ??= oauthServiceFactory(loadGoogleOAuthConfig(environment))
@@ -116,6 +122,11 @@ export function createRequestHandler({
   function getClassroomService() {
     classroomService ??= classroomServiceFactory()
     return classroomService
+  }
+
+  function getGmailService() {
+    gmailService ??= gmailServiceFactory()
+    return gmailService
   }
 
   function readSessionId(request) {
@@ -412,6 +423,76 @@ export function createRequestHandler({
               error: {
                 code: 'classroom_unavailable',
                 message: 'Google Classroom is temporarily unavailable.',
+              },
+            })
+            return
+          }
+
+          throw error
+        }
+        return
+      }
+
+      if (
+        request.method === 'GET' &&
+        requestUrl.pathname === '/api/gmail/connection'
+      ) {
+        const sessionId = readSessionId(request)
+        const session =
+          sessionId === undefined
+            ? undefined
+            : sessionStore.getAuthenticated(sessionId)
+
+        if (session === undefined) {
+          sendJson(
+            response,
+            401,
+            {
+              error: {
+                code: 'unauthenticated',
+                message: 'Authentication is required.',
+              },
+            },
+            { 'Set-Cookie': clearSessionCookie(secureCookie) },
+          )
+          return
+        }
+
+        try {
+          await getGmailService().checkConnection(session.accessToken)
+          sendJson(response, 200, { connected: true })
+        } catch (error) {
+          if (error instanceof GmailRequestError && error.status === 401) {
+            sessionStore.delete(sessionId)
+            sendJson(
+              response,
+              401,
+              {
+                error: {
+                  code: 'session_expired',
+                  message: 'The Google session has expired.',
+                },
+              },
+              { 'Set-Cookie': clearSessionCookie(secureCookie) },
+            )
+            return
+          }
+
+          if (error instanceof GmailRequestError && error.status === 403) {
+            sendJson(response, 403, {
+              error: {
+                code: 'gmail_forbidden',
+                message: 'Gmail access was denied.',
+              },
+            })
+            return
+          }
+
+          if (error instanceof GmailRequestError) {
+            sendJson(response, 502, {
+              error: {
+                code: 'gmail_unavailable',
+                message: 'Gmail is temporarily unavailable.',
               },
             })
             return
