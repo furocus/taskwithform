@@ -5,7 +5,7 @@
     "test": "vitest run",
     "dev": "vite",
     "dev:frontend": "vite --host localhost --port 5173",
-    "dev:backend": "node --watch backend/server.mjs",
+    "dev:backend": "node --env-file-if-exists=.env --watch backend/server.mjs",
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
     "format": "prettier --write .",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "dexie": "^4.4.4",
+    "google-auth-library": "^10.9.1",
     "vue": "^3.5.40",
     "vue-router": "^4.6.4"
   },

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ClassroomConnectionPanel from '../features/auth/components/ClassroomConnectionPanel.vue'
 import TaskCard from '../features/tasks/components/TaskCard.vue'
 import { mockTasks } from '../mocks/tasks'
 </script>
@@ -18,5 +19,7 @@ import { mockTasks } from '../mocks/tasks'
         :submission-target="task.submissionTarget"
       />
     </div>
+
+    <ClassroomConnectionPanel />
   </section>
 </template>

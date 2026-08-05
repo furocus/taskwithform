@@ -13,7 +13,13 @@ import TaskCard from './TaskCard.vue'
     </div>
 
     <div class="space-y-3">
-      <TaskCard v-for="task in mockTasks" :key="task.id" :task="task" />
+      <TaskCard
+        v-for="task in mockTasks"
+        :key="task.title"
+        :title="task.title"
+        :deadline="task.deadline"
+        :submission-target="task.submissionTarget"
+      />
     </div>
 
     <div class="section-divider pt-2">

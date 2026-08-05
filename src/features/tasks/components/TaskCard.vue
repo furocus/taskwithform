@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { Task } from '../task.types'
-
-const props = defineProps<{
-  task: Task
+defineProps<{
+  title: string
+  deadline: string
+  submissionTarget: string
 }>()
 </script>
 
