@@ -66,7 +66,10 @@ const courseColors = getCourseColors(props.courseId)
             class="task-list-accent inline-flex h-2.5 w-2.5 rounded-full"
             :style="{ backgroundColor: courseColors.accent }"
           />
-          <span class="text-xs font-semibold" :style="{ color: courseColors.accent }">
+          <span
+            class="text-xs font-semibold"
+            :style="{ color: courseColors.accent }"
+          >
             コース表示
           </span>
         </div>

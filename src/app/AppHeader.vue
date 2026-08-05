@@ -10,7 +10,9 @@ const currentMonth = today.getMonth() + 1
 const formattedDate = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`
 
 const isCalendarPage = computed(() => route.name === 'calendar')
-const pageTitle = computed(() => (isCalendarPage.value ? `${currentYear}年${currentMonth}月` : '課題一覧'))
+const pageTitle = computed(() =>
+  isCalendarPage.value ? `${currentYear}年${currentMonth}月` : '課題一覧',
+)
 
 const goToCalendar = () => {
   router.push('/calendar')
@@ -25,7 +27,10 @@ const goToMain = () => {
   <header
     class="border-b border-[color:var(--color-border-soft)] bg-[color:var(--color-bg-canvas)] px-4 py-5 sm:px-6"
   >
-    <div v-if="isCalendarPage" class="mx-auto flex max-w-3xl items-center justify-between gap-4">
+    <div
+      v-if="isCalendarPage"
+      class="mx-auto flex max-w-3xl items-center justify-between gap-4"
+    >
       <button
         class="flex items-center gap-1 text-sm font-medium text-[color:var(--color-text-secondary)]"
         type="button"
@@ -36,14 +41,19 @@ const goToMain = () => {
         <span>戻る</span>
       </button>
 
-      <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--color-text-primary)]">
+      <h1
+        class="text-2xl font-semibold tracking-tight text-[color:var(--color-text-primary)]"
+      >
         {{ pageTitle }}
       </h1>
 
       <div class="w-16" aria-hidden="true"></div>
     </div>
 
-    <div v-else class="mx-auto flex max-w-3xl items-start justify-between gap-4">
+    <div
+      v-else
+      class="mx-auto flex max-w-3xl items-start justify-between gap-4"
+    >
       <div>
         <p class="text-sm font-medium text-[color:var(--color-text-secondary)]">
           {{ formattedDate }}
