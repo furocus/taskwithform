@@ -1,25 +1,40 @@
 <script setup lang="ts">
 import type { Task } from '../task.types'
+import { getCourseColors } from '../task.utils'
 
 const props = defineProps<{
   task: Task
+  onTaskClick?: (taskId: string) => void
 }>()
+
+const courseColors = getCourseColors(props.task.courseId)
+
+const handleClick = () => {
+  props.onTaskClick?.(String(props.task.id))
+}
 </script>
 
 <template>
-  <article class="card-interactive panel-card p-4 sm:p-5">
+  <article
+    class="card-interactive panel-card cursor-pointer p-4 sm:p-5"
+    role="button"
+    tabindex="0"
+    @click="handleClick"
+    @keydown.enter.prevent="handleClick"
+    @keydown.space.prevent="handleClick"
+  >
     <div class="flex gap-3">
       <div
         class="w-1.5 rounded-full"
-        :style="{ backgroundColor: props.task.accentColor }"
+        :style="{ backgroundColor: courseColors.accent }"
       ></div>
       <div class="flex-1">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <span
             class="pill-badge"
             :style="{
-              backgroundColor: props.task.badgeBg,
-              color: props.task.badgeText,
+              backgroundColor: courseColors.badgeBg,
+              color: courseColors.badgeText,
             }"
           >
             {{ props.task.subject }}

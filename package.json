@@ -1,12 +1,15 @@
 {
   "name": "taskwithform",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:frontend": "vite --host localhost --port 5173",
     "dev:backend": "node --watch backend/server.mjs",
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
@@ -18,10 +21,13 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^26.1.0",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vite": "^8.1.5",
+    "vitest": "^2.1.4",
     "vue-tsc": "^3.3.8"
   }
 }
