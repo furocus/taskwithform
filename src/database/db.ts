@@ -19,8 +19,8 @@ export class TaskWithFormDatabase extends Dexie {
     this.version(2).stores({
       tasks:
         'id, &externalKey, source, courseId, courseName, courseWorkId, subjectName, dueDate, status, [status+dueDate], submittedAt',
-        syncStates: 'courseId',
-        answerConfirmations: '++id, formUrl, status, submittedAt'
+      syncStates: 'courseId',
+      answerConfirmations: '++id, formUrl, status, submittedAt',
     })
   }
 }
