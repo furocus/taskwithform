@@ -47,7 +47,7 @@ export type AnswerConfirmationRecord = {
   id: number 
   formUrl: string //課題個別のFormURL
   status: TaskStatus
-  confirmedAt?: string //YYYY-MM-DD式の確認日時（省略可能）
+  confirmedAt?: IsoDateTime //YYYY-MM-DD式の確認日時（省略可能）
 }
 
 export type AnswerConfirmationInput = Omit<AnswerConfirmationRecord, 'id'>
