@@ -42,3 +42,13 @@ export interface CourseTaskSnapshot {
   fetchedDate: DateOnly
   tasks: readonly TaskRecordInput[]
 }
+
+export type AnswerConfirmationRecord = {
+  id: string
+  formUrl: string //課題個別のFormURL
+  status: TaskStatus
+  confirmedAt?: string //YYYY-MM-DD式の確認日時（省略可能）
+}
+
+export type AnswerConfirmationInput = Omit<AnswerConfirmationRecord, 'id'>
+/**AnswerConfirmationRecordからidのみを除外し、保存用に新しく型定義 */
