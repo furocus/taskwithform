@@ -9,6 +9,7 @@ export const mockTasks: Task[] = [
     courseId: 'course-c',
     dueDate: '7月24日',
     warning: '今日まで！',
+    answerStatus: 'unreviewed',
   },
   {
     id: 2,
@@ -18,6 +19,7 @@ export const mockTasks: Task[] = [
     courseId: 'course-algo',
     dueDate: '7月26日',
     warning: 'あと3日',
+    answerStatus: 'reviewing',
   },
   {
     id: 3,
@@ -27,5 +29,6 @@ export const mockTasks: Task[] = [
     courseId: 'course-ict',
     dueDate: '7月28日',
     warning: 'あと5日',
+    answerStatus: 'submitted',
   },
 ]

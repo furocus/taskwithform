@@ -1,3 +1,6 @@
+export type AnswerStatus =
+  'unreviewed' | 'reviewing' | 'submitted' | 'unreviewable' | 'needsReview'
+
 export interface Task {
   id: number
   index: number
@@ -6,4 +9,5 @@ export interface Task {
   courseId?: string
   dueDate: string
   warning: string
+  answerStatus?: AnswerStatus
 }
