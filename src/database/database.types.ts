@@ -4,7 +4,7 @@ export type DateOnly = string
 /** An absolute timestamp serialized as an ISO 8601 string. */
 export type IsoDateTime = string
 
-export type TaskStatus = 'unsubmitted' | 'submitted'
+export type TaskStatus = 'unsubmitted' | 'submitted' | 'untracked'
 
 export type ClassroomCourseWorkType =
   'ASSIGNMENT' | 'SHORT_ANSWER_QUESTION' | 'MULTIPLE_CHOICE_QUESTION'
