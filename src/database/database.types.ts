@@ -44,7 +44,7 @@ export interface CourseTaskSnapshot {
 }
 
 export type AnswerConfirmationRecord = {
-  id?: number 
+  id?: number
   formUrl: string //課題個別のFormURL
   status: TaskStatus
   confirmedAt?: IsoDateTime //YYYY-MM-DD式の確認日時（省略可能）
