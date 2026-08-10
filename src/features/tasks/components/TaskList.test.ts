@@ -65,6 +65,40 @@ describe('TaskList', () => {
     expect(accent).toContain('background-color')
   })
 
+  it('recomputes course colors when courseId changes', async () => {
+    const wrapper = mount(TaskList, {
+      props: {
+        status: 'ready',
+        tasks: sampleTasks,
+        courseId: 'course-a',
+      },
+    })
+
+    const initialAccent = wrapper.get('.task-list-accent').attributes('style')
+    await wrapper.setProps({ courseId: 'course-b' })
+    const updatedAccent = wrapper.get('.task-list-accent').attributes('style')
+
+    expect(initialAccent).not.toEqual(updatedAccent)
+  })
+
+  it('does not show sync message during loading or error states', () => {
+    const loadingWrapper = mount(TaskList, {
+      props: {
+        status: 'loading',
+        tasks: [],
+      },
+    })
+    expect(loadingWrapper.text()).not.toContain('同期済み')
+
+    const errorWrapper = mount(TaskList, {
+      props: {
+        status: 'error',
+        tasks: [],
+      },
+    })
+    expect(errorWrapper.text()).not.toContain('同期済み')
+  })
+
   it('calls the task click callback when a task card is clicked', async () => {
     const onTaskClick = vi.fn()
     const wrapper = mount(TaskList, {

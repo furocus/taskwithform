@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Task } from '../task.types'
 import { getCourseColors } from '../task.utils'
 import TaskCard from './TaskCard.vue'
@@ -19,7 +20,7 @@ const props = withDefaults(
   },
 )
 
-const courseColors = getCourseColors(props.courseId)
+const courseColors = computed(() => getCourseColors(props.courseId))
 </script>
 
 <template>
@@ -33,25 +34,25 @@ const courseColors = getCourseColors(props.courseId)
 
     <div
       v-if="props.status === 'loading'"
-      class="rounded-lg border border-dashed border-[color:var(--color-border-subtle)] p-6 text-center text-sm text-[color:var(--color-text-secondary)]"
+      class="rounded-lg border border-dashed border-[color:var(--color-border-soft)] p-6 text-center text-sm text-[color:var(--color-text-secondary)]"
     >
       読み込み中
     </div>
 
     <div
       v-else-if="props.status === 'empty'"
-      class="rounded-lg border border-dashed border-[color:var(--color-border-subtle)] p-6 text-center text-sm text-[color:var(--color-text-secondary)]"
+      class="rounded-lg border border-dashed border-[color:var(--color-border-soft)] p-6 text-center text-sm text-[color:var(--color-text-secondary)]"
     >
       課題はまだありません
     </div>
 
     <div
       v-else-if="props.status === 'error'"
-      class="rounded-lg border border-[color:var(--color-border-subtle)] p-6 text-center text-sm text-[color:var(--color-text-secondary)]"
+      class="rounded-lg border border-[color:var(--color-border-soft)] p-6 text-center text-sm text-[color:var(--color-text-secondary)]"
     >
       <p class="mb-3">課題の読み込みに失敗しました。</p>
       <button
-        class="rounded-full border border-[color:var(--color-border-subtle)] px-4 py-2 text-sm font-semibold text-[color:var(--color-text-primary)]"
+        class="rounded-full border border-[color:var(--color-border-soft)] px-4 py-2 text-sm font-semibold text-[color:var(--color-text-primary)]"
         type="button"
         @click="props.onRetry"
       >
@@ -85,13 +86,13 @@ const courseColors = getCourseColors(props.courseId)
 
       <div
         v-else
-        class="rounded-lg border border-dashed border-[color:var(--color-border-subtle)] p-6 text-center text-sm text-[color:var(--color-text-secondary)]"
+        class="rounded-lg border border-dashed border-[color:var(--color-border-soft)] p-6 text-center text-sm text-[color:var(--color-text-secondary)]"
       >
         課題はまだありません
       </div>
     </div>
 
-    <div class="section-divider pt-2">
+    <div v-if="props.status === 'ready'" class="section-divider pt-2">
       <span>─── Google Classroomと同期済み ───</span>
     </div>
   </section>

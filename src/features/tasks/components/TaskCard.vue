@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Task } from '../task.types'
+import { computed } from 'vue'
 import { getCourseColors } from '../task.utils'
 
 const props = defineProps<{
@@ -7,7 +8,7 @@ const props = defineProps<{
   onTaskClick?: (taskId: string) => void
 }>()
 
-const courseColors = getCourseColors(props.task.courseId)
+const courseColors = computed(() => getCourseColors(props.task.courseId))
 
 const handleClick = () => {
   props.onTaskClick?.(String(props.task.id))
