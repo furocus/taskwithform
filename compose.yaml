@@ -1,0 +1,56 @@
+x-development-environment: &development-environment
+  HOME: /tmp/taskwithform-home
+  npm_config_cache: /tmp/taskwithform-npm-cache
+
+x-development: &development
+  image: taskwithform-development
+  build:
+    context: .
+    dockerfile: docker/development/Dockerfile
+  user: node
+  working_dir: /workspace
+  environment: *development-environment
+  volumes:
+    - .:/workspace
+
+services:
+  install:
+    <<: *development
+    command: [npm, ci, --include=dev]
+
+  backend:
+    <<: *development
+    command: [npm, run, dev:backend]
+    restart: unless-stopped
+    environment:
+      <<: *development-environment
+      HOST: 0.0.0.0
+    ports:
+      - '3000:3000'
+    depends_on:
+      install:
+        condition: service_completed_successfully
+
+  frontend:
+    <<: *development
+    command: [npm, run, dev, --, --host, 0.0.0.0, --port, '5173']
+    restart: unless-stopped
+    environment:
+      <<: *development-environment
+      VITE_BACKEND_ORIGIN: http://backend:3000
+    ports:
+      - '5173:5173'
+    depends_on:
+      install:
+        condition: service_completed_successfully
+
+  mock:
+    <<: *development
+    profiles: [mock]
+    command: [npm, run, dev:mock, --, --host, 0.0.0.0, --port, '5174']
+    restart: unless-stopped
+    ports:
+      - '5174:5174'
+    depends_on:
+      install:
+        condition: service_completed_successfully

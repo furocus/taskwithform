@@ -4,46 +4,37 @@ ClassroomとFormから課題情報を取得し、進捗を管理するWebアプ�
 
 ## ローカルでフロントエンドとバックエンドを確認する
 
-ホスト側のNode.js 24とnpmを使い、フロントエンドとバックエンドを別々のlocalhostサーバーとして確認できます。
-初回だけ依存関係をインストールしてください。
+正規の開発経路は、WSL2上のDocker EngineとDocker Composeです。Node.js、npm、開発サーバーはComposeのコンテナ内で実行します。
+
+リポジトリのルートで次を実行してください。
 
 ```bash
-npm ci
+docker compose up -d frontend backend
 ```
 
-2つのターミナルを開き、リポジトリのルートでそれぞれの開発サーバーを起動します。
-
-ターミナル1（フロントエンド）:
+`frontend`と`backend`は、先に`install`サービスがComposeの共通開発イメージ内で`npm ci --include=dev`を完了してから起動します。初回セットアップや`package-lock.json`更新後に依存関係だけを入れ直す場合は、次を実行します。
 
 ```bash
-npm run dev:frontend
-```
-
-ターミナル2（バックエンド）:
-
-```bash
-npm run dev:backend
+docker compose run --rm install
 ```
 
 ブラウザで`http://localhost:5173/login`を開くとログインページが表示されます。
+
 `http://localhost:3000/api/health`を開くと`{"status":"ok"}`が返ります。
 バックエンドの未定義パスはHTTP 404になります。
 
-フロントエンドだけを起動する既存のコマンドも利用できます。
+バックエンドは`http://localhost:3000/api/health`で確認できます。Composeネットワーク内ではフロントエンドのVite proxyが`http://backend:3000`へ接続します。
 
-```bash
-npm run dev
-```
+ログを確認する場合は`docker compose logs -f frontend backend`を実行します。Composeを終了する場合は`docker compose down`を使用してください。
 
-各サーバーを終了するには、起動したターミナルで`Ctrl+C`を押します。
+`frontend`と`backend`には`restart: unless-stopped`を設定しているため、`docker compose up -d`で一度起動しておけば、Docker Engineの再起動後も自動的に再起動します。`docker compose down`を実行した場合は意図的な停止として扱われるため、再度`up -d`が必要です。
 
 ## Google認証なしでフロントエンドを確認する
 
 画面だけを確認する場合は、バックエンドやGoogle OAuthを準備せずにモックプレビューを起動できます。
 
 ```bash
-npm ci
-npm run dev:mock
+docker compose --profile mock up -d mock
 ```
 
 ブラウザで`http://localhost:5174/`を開いてください。認証済みセッションとClassroomコース3件をローカルで模擬します。
@@ -73,7 +64,7 @@ FRONTEND_ORIGIN=http://localhost:5173
 
 `.env`には秘密情報が含まれるためGitへコミットしないでください。
 
-設定後、`npm run dev:frontend`と`npm run dev:backend`を別々のターミナルで起動し、`http://localhost:5173/login`からログインします。許可を求めるGoogle Classroomスコープは読み取り専用です。メイン画面にはACTIVEなコースの合計件数だけを表示し、コース名やIDは表示しません。
+設定後、`docker compose up -d frontend backend`を実行し、`http://localhost:5173/login`からログインします。許可を求めるGoogle Classroomスコープは読み取り専用です。メイン画面にはACTIVEなコースの合計件数だけを表示し、コース名やIDは表示しません。
 
 認証情報はバックエンドのメモリ上だけに保持します。アクセストークンの期限切れまたはバックエンドの再起動後は、再ログインが必要です。
 
@@ -81,8 +72,8 @@ FRONTEND_ORIGIN=http://localhost:5173
 
 ## 開発環境のセットアップ
 
-WSL2のUbuntuが入っていれば、DockerやNode.jsを個別にインストールする必要はありません。
-このリポジトリに含まれる`setup-wsl.sh`が、開発に必要な環境をまとめて準備します。
+WSL2のUbuntuが入っていれば、Node.jsやnpmをホストへ個別にインストールする必要はありません。
+このリポジトリに含まれる`setup-wsl.sh`は、WSL2上のDocker Engine、Docker CLI、Docker Composeを導入・検証します。アプリの依存関係インストールと開発サーバー起動は、セットアップ後にComposeで行います。
 
 必要なもの:
 
@@ -161,34 +152,13 @@ systemctl is-active docker
 
 それぞれ`enabled`と`active`が表示されれば、Docker Engineは正常です。
 
-Node.jsのバージョンをコンテナ内で確認します。
+Compose設定を読み取り専用で検証します。
 
 ```bash
-docker run --rm node:24.17.0-bookworm-slim node -v
+docker compose config
 ```
 
-npmのバージョンをコンテナ内で確認します。
-
-```bash
-docker run --rm node:24.17.0-bookworm-slim npm -v
-```
-
-プロジェクトへインストールされた依存関係を確認します。
-
-```bash
-docker run --rm \
-  --user "$(id -u):$(id -g)" \
-  --env HOME=/tmp/taskwithform-home \
-  --volume "$PWD:/workspace" \
-  --workdir /workspace \
-  node:24.17.0-bookworm-slim \
-  npm ls --depth=0
-```
-
-すべてエラーなく完了すれば、開発環境の準備は完了です。
-
-このプロジェクトではNode.jsとnpmをDockerコンテナ内で使用します。
-ホスト側のUbuntuで`node -v`や`npm -v`を実行できなくても問題ありません。
+エラーなく完了すればDocker EngineとComposeの準備は完了です。Node.jsのバージョン確認やnpmの依存関係インストールは、`docker compose run --rm install`などComposeのサービスを通して行います。
 
 ## セットアップに失敗した場合
 
@@ -254,14 +224,11 @@ Docker公式パッケージと、Ubuntuなどが提供する別のDockerパッ�
 8. Docker Engineを起動し、WSL起動時の自動起動を有効化
 9. 実行ユーザーを`docker`グループへ追加
 10. Docker EngineとDocker Composeの動作を確認
-11. 公式Node.js 24イメージを取得
-12. Node.jsコンテナ内で`npm ci`を実行
-13. インストールされたnpm依存関係を確認
 
-スクリプトは再実行できます。
+スクリプトは再実行できます。Node.jsイメージのビルド、npm依存関係のインストール、アプリの起動は行いません。
 すでにDocker関連パッケージがインストールされている場合は、既存の環境を再利用します。
 
-ホスト側へNode.jsやnpmを直接インストールすることはありません。
+ホスト側へNode.jsやnpmを直接インストールすることはありません。アプリを起動するときは、リポジトリのルートで`docker compose up -d frontend backend`を実行してください。
 
 > [!WARNING]
 > `docker`グループのメンバーは、実質的にroot相当の権限を持ちます。

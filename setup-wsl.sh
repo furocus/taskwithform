@@ -2,11 +2,6 @@
 
 set -Eeuo pipefail
 
-readonly TASK_NODE_IMAGE="${TASK_NODE_IMAGE:-node:24.17.0-bookworm-slim}"
-readonly TASK_REPOSITORY_DIR="$(
-  cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
-  pwd
-)"
 readonly TASK_DOCKER_PACKAGES=(
   docker-ce
   docker-ce-cli
@@ -65,15 +60,6 @@ if [[ "$(id -u)" -eq 0 ]]; then
   fail 'Run this script as your normal user, not as root or with "sudo ./setup-wsl.sh".'
 fi
 readonly TASK_RUN_USER="$(id -un)"
-
-[[ -f "$TASK_REPOSITORY_DIR/package.json" ]] ||
-  fail 'package.json was not found next to setup-wsl.sh.'
-[[ -f "$TASK_REPOSITORY_DIR/package-lock.json" ]] ||
-  fail 'package-lock.json was not found next to setup-wsl.sh.'
-
-if [[ "$TASK_REPOSITORY_DIR" == /mnt/* ]]; then
-  log 'Warning: the repository is on a Windows-mounted drive; the WSL filesystem is usually faster.'
-fi
 
 log 'Administrator permission is required to install and start Docker Engine.'
 sudo -v
@@ -159,21 +145,6 @@ log 'Verifying Docker Engine...'
 sudo docker info >/dev/null
 sudo docker compose version
 
-log "Using Docker image: $TASK_NODE_IMAGE"
-if ! sudo docker image inspect "$TASK_NODE_IMAGE" >/dev/null 2>&1; then
-  log 'Pulling the Node.js image...'
-  sudo docker pull "$TASK_NODE_IMAGE"
-fi
-
-log 'Installing locked npm dependencies inside Docker...'
-sudo docker run --rm \
-  --user "$(id -u "$TASK_RUN_USER"):$(id -g "$TASK_RUN_USER")" \
-  --env HOME=/tmp/taskwithform-home \
-  --env npm_config_cache=/tmp/taskwithform-npm-cache \
-  --volume "$TASK_REPOSITORY_DIR:/workspace" \
-  --workdir /workspace \
-  "$TASK_NODE_IMAGE" \
-  sh -c 'npm ci --include=dev && npm ls --depth=0'
-
 log 'Setup completed successfully.'
 log 'Close all Ubuntu terminals and reopen Ubuntu before running docker without sudo.'
+log 'Run "docker compose up -d frontend backend" from the repository to start the application.'
