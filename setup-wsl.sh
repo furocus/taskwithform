@@ -147,4 +147,4 @@ sudo docker compose version
 
 log 'Setup completed successfully.'
 log 'Close all Ubuntu terminals and reopen Ubuntu before running docker without sudo.'
-log 'Run "docker compose up -d frontend backend" from the repository to start the application.'
+log 'Run "./dev up" from the repository to start the application.'
