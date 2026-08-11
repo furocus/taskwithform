@@ -10,20 +10,29 @@ const props = defineProps<{
 }>()
 
 const courseColors = computed(() => getCourseColors(props.task.courseId))
+const isInteractive = computed(() => Boolean(props.onTaskClick))
+const answerStatus = computed(() => props.task.answerStatus ?? 'unreviewed')
 
 const handleClick = () => {
   props.onTaskClick?.(String(props.task.id))
+}
+
+const handleKeydown = (event: KeyboardEvent) => {
+  if (!isInteractive.value) return
+  event.preventDefault()
+  handleClick()
 }
 </script>
 
 <template>
   <article
-    class="card-interactive panel-card cursor-pointer p-4 sm:p-5"
-    role="button"
-    tabindex="0"
+    class="card-interactive panel-card p-4 sm:p-5"
+    :class="{ 'cursor-pointer': isInteractive }"
+    :role="isInteractive ? 'button' : undefined"
+    :tabindex="isInteractive ? 0 : undefined"
     @click="handleClick"
-    @keydown.enter.prevent="handleClick"
-    @keydown.space.prevent="handleClick"
+    @keydown.enter="handleKeydown"
+    @keydown.space="handleKeydown"
   >
     <div class="flex gap-3">
       <div
@@ -52,9 +61,9 @@ const handleClick = () => {
             >
               {{ props.task.index }}
             </div>
-            <div class="flex-1 min-w-0">
+            <div class="flex-1 min-w-0 overflow-hidden">
               <h3
-                class="truncate overflow-hidden whitespace-nowrap text-[15px] font-semibold text-[color:var(--color-text-primary)]"
+                class="line-clamp-2 max-w-full overflow-hidden break-words text-[15px] font-semibold text-[color:var(--color-text-primary)]"
               >
                 {{ props.task.title }}
               </h3>
@@ -65,10 +74,7 @@ const handleClick = () => {
           </div>
 
           <div class="flex flex-col gap-2 items-start sm:items-end">
-            <AnswerStatusBadge
-              v-if="props.task.answerStatus"
-              :status="props.task.answerStatus"
-            />
+            <AnswerStatusBadge :status="answerStatus" />
             <div class="flex items-center justify-between w-full sm:w-auto">
               <div />
               <p class="text-sm font-semibold text-accent">
@@ -81,3 +87,13 @@ const handleClick = () => {
     </div>
   </article>
 </template>
+
+<style scoped>
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  word-break: break-word;
+}
+</style>

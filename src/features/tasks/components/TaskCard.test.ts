@@ -40,4 +40,20 @@ describe('TaskCard', () => {
     await wrapper.get('article[role="button"]').trigger('click')
     expect(onTaskClick).toHaveBeenCalledWith('1')
   })
+
+  it('does not expose button semantics when onTaskClick is not provided', () => {
+    const taskWithoutCallback: Task = {
+      ...sampleTask,
+      answerStatus: 'unreviewed',
+    }
+    const wrapper = mount(TaskCard, {
+      props: {
+        task: taskWithoutCallback,
+      },
+    })
+
+    expect(wrapper.find('article').attributes('role')).toBeUndefined()
+    expect(wrapper.find('article').attributes('tabindex')).toBeUndefined()
+    expect(wrapper.find('article').classes()).not.toContain('cursor-pointer')
+  })
 })

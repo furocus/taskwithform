@@ -40,12 +40,12 @@ const statusStyle = computed(() => {
     },
     unreviewable: {
       backgroundColor: 'var(--color-danger-soft)',
-      color: 'var(--color-danger)',
+      color: 'var(--color-text-primary)',
       borderColor: 'var(--color-danger)',
     },
     needsReview: {
       backgroundColor: 'var(--color-orange-soft)',
-      color: 'var(--color-orange)',
+      color: 'var(--color-text-primary)',
       borderColor: 'var(--color-orange)',
     },
   }

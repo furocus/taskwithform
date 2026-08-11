@@ -9,5 +9,5 @@ export interface Task {
   courseId?: string
   dueDate: string
   warning: string
-  answerStatus?: AnswerStatus
+  answerStatus: AnswerStatus
 }
