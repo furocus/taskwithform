@@ -159,6 +159,7 @@ describe('Google Classroom service', () => {
     expect(fetchImplementation).toHaveBeenCalledTimes(3)
     const courseRequestUrl = fetchImplementation.mock.calls[0][0]
     expect(courseRequestUrl.searchParams.get('courseStates')).toBe('ACTIVE')
+    expect(courseRequestUrl.searchParams.get('studentId')).toBe('me')
     expect(courseRequestUrl.searchParams.get('fields')).toBe(
       'nextPageToken,courses(id,name)',
     )
@@ -176,6 +177,59 @@ describe('Google Classroom service', () => {
     expect(
       fetchImplementation.mock.calls[2][0].searchParams.get('pageToken'),
     ).toBe('course-work-page-2')
+  })
+
+  it('requests only courses where the current user is a student', async () => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        if (requestUrl.searchParams.get('studentId') === 'me') {
+          return createJsonResponse({
+            courses: [{ id: 'student-course', name: '数学' }],
+          })
+        }
+
+        return createJsonResponse({
+          courses: [
+            { id: 'teacher-course', name: '担当授業' },
+            { id: 'student-course', name: '数学' },
+          ],
+        })
+      }
+
+      if (requestUrl.pathname.includes('teacher-course')) {
+        return createJsonResponse({}, 403)
+      }
+
+      return createJsonResponse({
+        courseWork: [
+          {
+            id: 'work-1',
+            title: '確認テスト',
+            workType: 'ASSIGNMENT',
+          },
+        ],
+      })
+    })
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listCourseWorkWithForms('access-token'),
+    ).resolves.toEqual([
+      {
+        courseId: 'student-course',
+        courseName: '数学',
+        courseWorkId: 'work-1',
+        courseWorkType: 'ASSIGNMENT',
+        title: '確認テスト',
+        forms: [],
+      },
+    ])
+    expect(fetchImplementation).toHaveBeenCalledTimes(2)
+    expect(
+      fetchImplementation.mock.calls.some(([requestUrl]) =>
+        requestUrl.pathname.includes('teacher-course'),
+      ),
+    ).toBe(false)
   })
 
   it('rejects an unrecognized Form URL instead of returning an incorrect ID', async () => {

@@ -275,6 +275,7 @@ export function createGoogleClassroomService({
         createRequestUrl(pageToken) {
           const requestUrl = new URL(CLASSROOM_COURSES_URL)
           requestUrl.searchParams.set('courseStates', 'ACTIVE')
+          requestUrl.searchParams.set('studentId', 'me')
           requestUrl.searchParams.set('pageSize', COURSE_PAGE_SIZE)
           requestUrl.searchParams.set(
             'fields',
