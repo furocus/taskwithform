@@ -11,6 +11,7 @@ const sampleTasks: Task[] = [
     subject: 'C言語',
     dueDate: '2026-08-05',
     warning: '2日後',
+    answerStatus: 'unreviewed',
   },
 ]
 
