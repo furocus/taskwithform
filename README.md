@@ -37,6 +37,19 @@ npm run dev
 
 各サーバーを終了するには、起動したターミナルで`Ctrl+C`を押します。
 
+## Google認証なしでフロントエンドを確認する
+
+画面だけを確認する場合は、バックエンドやGoogle OAuthを準備せずにモックプレビューを起動できます。
+
+```bash
+npm ci
+npm run dev:mock
+```
+
+ブラウザで`http://localhost:5174/`を開いてください。認証済みセッションとClassroomコース3件をローカルで模擬します。
+
+このコマンドは実Googleアカウント、トークン、Classroomデータを使用しません。通常の`npm run dev:frontend`と認証処理には影響せず、モックで未定義のAPIはHTTP 404になります。終了するには`Ctrl+C`を押します。
+
 ## Google OAuthを使って動作確認する
 
 Google Classroomのコース件数を取得するには、Google CloudでOAuthクライアントを作成し、ローカル環境変数を設定します。

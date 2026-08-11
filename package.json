@@ -6,6 +6,7 @@
     "test": "vitest run",
     "dev": "vite",
     "dev:frontend": "vite --host localhost --port 5173",
+    "dev:mock": "vite --config vite.mock.config.ts --host localhost --port 5174",
     "dev:backend": "node --env-file-if-exists=.env --watch backend/server.mjs",
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
