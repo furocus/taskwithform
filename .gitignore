@@ -35,3 +35,7 @@ Thumbs.db
 .codex/
 .agents/
 skills-lock.json
+
+# docs
+hand-off-answer-confirmation.md
+dev-seed.ts
