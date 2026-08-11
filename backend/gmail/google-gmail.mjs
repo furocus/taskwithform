@@ -1,5 +1,6 @@
 const GMAIL_PROFILE_URL =
   'https://gmail.googleapis.com/gmail/v1/users/me/profile'
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 
 export class GmailRequestError extends Error {
   constructor(code, { status, cause } = {}) {
@@ -10,7 +11,10 @@ export class GmailRequestError extends Error {
   }
 }
 
-export function createGoogleGmailService({ fetchImplementation = fetch } = {}) {
+export function createGoogleGmailService({
+  fetchImplementation = fetch,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+} = {}) {
   return {
     async checkConnection(accessToken) {
       const requestUrl = new URL(GMAIL_PROFILE_URL)
@@ -22,6 +26,7 @@ export function createGoogleGmailService({ fetchImplementation = fetch } = {}) {
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
+          signal: AbortSignal.timeout(requestTimeoutMs),
         })
       } catch (error) {
         throw new GmailRequestError('network_error', { cause: error })

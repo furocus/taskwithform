@@ -1,6 +1,7 @@
 const CLASSROOM_COURSES_URL = 'https://classroom.googleapis.com/v1/courses'
 const COURSE_PAGE_SIZE = '100'
 const COURSE_WORK_PAGE_SIZE = '100'
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 
 export class ClassroomRequestError extends Error {
   constructor(code, { status, cause } = {}) {
@@ -33,13 +34,19 @@ function readPage(responseBody, collectionName) {
   }
 }
 
-async function fetchJson(fetchImplementation, requestUrl, accessToken) {
+async function fetchJson(
+  fetchImplementation,
+  requestUrl,
+  accessToken,
+  requestTimeoutMs,
+) {
   let response
   try {
     response = await fetchImplementation(requestUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
+      signal: AbortSignal.timeout(requestTimeoutMs),
     })
   } catch (error) {
     throw new ClassroomRequestError('network_error', {
@@ -67,6 +74,7 @@ async function fetchAllPages({
   collectionName,
   createRequestUrl,
   fetchImplementation,
+  requestTimeoutMs,
 }) {
   const items = []
   let pageToken
@@ -78,6 +86,7 @@ async function fetchAllPages({
       fetchImplementation,
       requestUrl,
       accessToken,
+      requestTimeoutMs,
     )
     const page = readPage(responseBody, collectionName)
     items.push(...page.items)
@@ -214,6 +223,7 @@ function mapCourseWork(course, courseWork) {
 
 export function createGoogleClassroomService({
   fetchImplementation = fetch,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
 } = {}) {
   return {
     async countActiveCourses(accessToken) {
@@ -221,6 +231,7 @@ export function createGoogleClassroomService({
         accessToken,
         collectionName: 'courses',
         fetchImplementation,
+        requestTimeoutMs,
         createRequestUrl(pageToken) {
           const requestUrl = new URL(CLASSROOM_COURSES_URL)
           requestUrl.searchParams.set('courseStates', 'ACTIVE')
@@ -241,6 +252,7 @@ export function createGoogleClassroomService({
         accessToken,
         collectionName: 'courses',
         fetchImplementation,
+        requestTimeoutMs,
         createRequestUrl(pageToken) {
           const requestUrl = new URL(CLASSROOM_COURSES_URL)
           requestUrl.searchParams.set('courseStates', 'ACTIVE')
@@ -277,6 +289,7 @@ export function createGoogleClassroomService({
           accessToken,
           collectionName: 'courseWork',
           fetchImplementation,
+          requestTimeoutMs,
           createRequestUrl(pageToken) {
             const requestUrl = new URL(courseWorkUrl)
             requestUrl.searchParams.set('courseWorkStates', 'PUBLISHED')

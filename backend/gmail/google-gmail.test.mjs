@@ -64,6 +64,30 @@ describe('Google Gmail service', () => {
     )
   })
 
+  it('aborts a stalled request and maps it to a network failure', async () => {
+    const fetchImplementation = vi.fn(
+      (_requestUrl, { signal }) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), {
+            once: true,
+          })
+        }),
+    )
+    const service = createGoogleGmailService({
+      fetchImplementation,
+      requestTimeoutMs: 1,
+    })
+
+    await expect(service.checkConnection('access-token')).rejects.toMatchObject(
+      {
+        name: 'GmailRequestError',
+        code: 'network_error',
+        message: 'Gmail request failed.',
+      },
+    )
+    expect(fetchImplementation.mock.calls[0][1].signal.aborted).toBe(true)
+  })
+
   it('rejects a profile response without a history ID', async () => {
     const service = createGoogleGmailService({
       fetchImplementation: vi.fn(async () =>

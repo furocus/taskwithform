@@ -221,6 +221,30 @@ describe('Google Classroom service', () => {
     )
   })
 
+  it('aborts a stalled request and maps it to a network failure', async () => {
+    const fetchImplementation = vi.fn(
+      (_requestUrl, { signal }) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), {
+            once: true,
+          })
+        }),
+    )
+    const service = createGoogleClassroomService({
+      fetchImplementation,
+      requestTimeoutMs: 1,
+    })
+
+    await expect(service.countActiveCourses('access-token')).rejects.toEqual(
+      expect.objectContaining({
+        name: 'ClassroomRequestError',
+        code: 'network_error',
+        message: 'Google Classroom request failed.',
+      }),
+    )
+    expect(fetchImplementation.mock.calls[0][1].signal.aborted).toBe(true)
+  })
+
   it('rejects an unexpected response shape', async () => {
     const service = createGoogleClassroomService({
       fetchImplementation: vi.fn(async () =>
