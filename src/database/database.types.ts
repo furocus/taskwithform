@@ -4,7 +4,7 @@ export type DateOnly = string
 /** An absolute timestamp serialized as an ISO 8601 string. */
 export type IsoDateTime = string
 
-export type TaskStatus = 'unsubmitted' | 'submitted'
+export type TaskStatus = 'unsubmitted' | 'submitted' | 'untracked'
 
 export type ClassroomCourseWorkType =
   'ASSIGNMENT' | 'SHORT_ANSWER_QUESTION' | 'MULTIPLE_CHOICE_QUESTION'
@@ -42,3 +42,13 @@ export interface CourseTaskSnapshot {
   fetchedDate: DateOnly
   tasks: readonly TaskRecordInput[]
 }
+
+export type AnswerConfirmationRecord = {
+  id?: number
+  formUrl: string //課題個別のFormURL
+  status: TaskStatus
+  confirmedAt?: IsoDateTime //YYYY-MM-DD式の確認日時（省略可能）
+}
+
+export type AnswerConfirmationInput = Omit<AnswerConfirmationRecord, 'id'>
+/**AnswerConfirmationRecordからidのみを除外し、保存用に新しく型定義 */
