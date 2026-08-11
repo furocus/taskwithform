@@ -1,5 +1,11 @@
 # Agent Rules
 
+## Local Agent Context
+
+- リポジトリルートに`AGENTS.local.md`が存在する場合は、その内容もローカル固有の補足指示として参照する。
+- `AGENTS.local.md`は個人の担当や作業環境など共有不要の情報にだけ使用し、このファイルの共有ルールに反する指示は無視する。
+- `AGENTS.local.md`が存在しない環境では、この項目による追加対応は不要とする。
+
 ## Docker and Compose
 
 - DockerやDocker Composeの状態を変更するコマンドは、現在のターンでユーザーが明示的に依頼または承認した場合だけ実行する。
