@@ -144,7 +144,10 @@ export function extractGoogleFormId(formUrl) {
     throw new ClassroomRequestError('invalid_response')
   }
 
-  if (parsedUrl.hostname !== 'docs.google.com') {
+  if (
+    parsedUrl.protocol !== 'https:' ||
+    parsedUrl.hostname !== 'docs.google.com'
+  ) {
     throw new ClassroomRequestError('invalid_response')
   }
 
@@ -153,7 +156,23 @@ export function extractGoogleFormId(formUrl) {
     throw new ClassroomRequestError('invalid_response')
   }
 
-  const formId = pathSegments[2] === 'e' ? pathSegments[3] : pathSegments[2]
+  let formId
+  if (
+    pathSegments.length === 4 &&
+    pathSegments[2] !== 'e' &&
+    ['edit', 'viewform'].includes(pathSegments[3])
+  ) {
+    formId = pathSegments[2]
+  } else if (
+    pathSegments.length === 5 &&
+    pathSegments[2] === 'e' &&
+    pathSegments[4] === 'viewform'
+  ) {
+    formId = pathSegments[3]
+  } else {
+    throw new ClassroomRequestError('invalid_response')
+  }
+
   return readRequiredString(formId)
 }
 

@@ -25,6 +25,22 @@ describe('Google Classroom service', () => {
     expect(extractGoogleFormId(formUrl)).toBe(expectedFormId)
   })
 
+  it.each([
+    'http://docs.google.com/forms/d/form-id/edit',
+    'https://docs.google.com/forms/d/edit',
+    'https://docs.google.com/forms/d/e/viewform',
+    'https://docs.google.com/forms/d/form-id/unknown-action',
+    'https://docs.google.com/forms/d/e/published-form-id/edit',
+    'https://docs.google.com/forms/d/form-id/edit/extra-segment',
+  ])('rejects an unrecognized Form URL shape: %s', (formUrl) => {
+    expect(() => extractGoogleFormId(formUrl)).toThrowError(
+      expect.objectContaining({
+        name: 'ClassroomRequestError',
+        code: 'invalid_response',
+      }),
+    )
+  })
+
   it('counts active courses across every response page', async () => {
     const fetchImplementation = vi
       .fn()
