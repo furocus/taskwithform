@@ -3,9 +3,7 @@ export interface Task {
   index: number
   title: string
   subject: string
+  courseId?: string
   dueDate: string
   warning: string
-  accentColor: string
-  badgeBg: string
-  badgeText: string
 }

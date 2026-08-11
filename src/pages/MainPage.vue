@@ -1,25 +1,40 @@
 <script setup lang="ts">
+import { reactive } from 'vue'
 import ClassroomConnectionPanel from '../features/auth/components/ClassroomConnectionPanel.vue'
-import TaskCard from '../features/tasks/components/TaskCard.vue'
+import type { Task } from '../features/tasks/task.types'
+import TaskList from '../features/tasks/components/TaskList.vue'
 import { mockTasks } from '../mocks/tasks'
+
+type TaskListState = {
+  status: 'loading' | 'empty' | 'error' | 'ready'
+  tasks: Task[]
+  courseId: string
+}
+
+const taskListState = reactive<TaskListState>({
+  status: 'ready',
+  tasks: mockTasks,
+  courseId: 'course-a',
+})
+
+const handleRetry = () => {
+  taskListState.status = 'loading'
+
+  window.setTimeout(() => {
+    taskListState.status = 'ready'
+    taskListState.tasks = mockTasks
+  }, 300)
+}
 </script>
 
 <template>
-  <section>
-    <p class="text-sm font-semibold text-indigo-600">HOME</p>
-    <h1 class="mt-2 text-3xl font-bold text-slate-900">メイン画面</h1>
-    <p class="mt-4 text-slate-600">課題一覧を表示するページです。</p>
-
-    <div class="mt-6 space-y-4">
-      <TaskCard
-        v-for="task in mockTasks"
-        :key="task.title"
-        :title="task.title"
-        :deadline="task.deadline"
-        :submission-target="task.submissionTarget"
-      />
-    </div>
-
+  <section class="space-y-5">
+    <TaskList
+      :status="taskListState.status"
+      :tasks="taskListState.tasks"
+      :course-id="taskListState.courseId"
+      :on-retry="handleRetry"
+    />
     <ClassroomConnectionPanel />
   </section>
 </template>
