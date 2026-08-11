@@ -1,11 +1,35 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 
-const router = useRouter()
+const route = useRoute()
 
 function login() {
-  void router.replace('/')
+  window.location.assign('/api/auth/google')
 }
+
+const errorMessages: Readonly<Record<string, string>> = {
+  access_denied: 'Googleログインがキャンセルされました。',
+  invalid_state: 'ログインの有効期限が切れました。もう一度お試しください。',
+  oauth_failed:
+    'Googleログインに失敗しました。時間をおいて再度お試しください。',
+  session_expired:
+    'Googleセッションの有効期限が切れました。再ログインしてください。',
+  session_check_failed:
+    '認証状態を確認できませんでした。バックエンドの起動状態を確認してください。',
+}
+
+const errorMessage = computed(() => {
+  const errorCode = route.query.error
+  if (typeof errorCode !== 'string') {
+    return undefined
+  }
+
+  return (
+    errorMessages[errorCode] ??
+    'ログイン処理でエラーが発生しました。もう一度お試しください。'
+  )
+})
 </script>
 
 <template>
@@ -20,35 +44,31 @@ function login() {
       </p>
       <h1 class="mt-2 text-3xl font-bold text-slate-900">ログイン</h1>
       <p class="mt-3 text-sm leading-6 text-slate-600">
-        アカウント情報を入力してメイン画面へ進みます。
+        Google
+        Classroomのコース件数を確認するため、Googleアカウントでログインします。
       </p>
 
-      <form class="mt-8 space-y-5" @submit.prevent="login">
-        <label class="block">
-          <span class="text-sm font-medium text-slate-700">メールアドレス</span>
-          <input
-            type="email"
-            autocomplete="email"
-            class="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-        </label>
+      <p
+        v-if="errorMessage"
+        role="alert"
+        class="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"
+      >
+        {{ errorMessage }}
+      </p>
 
-        <label class="block">
-          <span class="text-sm font-medium text-slate-700">パスワード</span>
-          <input
-            type="password"
-            autocomplete="current-password"
-            class="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-        </label>
-
+      <div class="mt-8">
         <button
-          type="submit"
+          type="button"
           class="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+          @click="login"
         >
-          ログイン
+          Googleでログイン
         </button>
-      </form>
+      </div>
+
+      <p class="mt-4 text-xs leading-5 text-slate-500">
+        Googleのアクセストークンはブラウザへ保存しません。
+      </p>
     </section>
   </main>
 </template>

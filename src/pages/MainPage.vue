@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
+import ClassroomConnectionPanel from '../features/auth/components/ClassroomConnectionPanel.vue'
 import type { Task } from '../features/tasks/task.types'
 import TaskList from '../features/tasks/components/TaskList.vue'
 import { mockTasks } from '../mocks/tasks'
@@ -34,5 +35,6 @@ const handleRetry = () => {
       :course-id="taskListState.courseId"
       :on-retry="handleRetry"
     />
+    <ClassroomConnectionPanel />
   </section>
 </template>
