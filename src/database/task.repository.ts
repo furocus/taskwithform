@@ -191,6 +191,25 @@ export class TaskRepository {
       .sortBy('dueDate')
   }
 
+  async getTasksGroupedByDueDate(
+    startDate: string,
+    endDate: string,
+  ): Promise<Record<string, TaskRecord[]>> {
+    const tasks = await this.getUnsubmittedTasksInDateRange(startDate, endDate)
+
+    return tasks.reduce<Record<string, TaskRecord[]>>((grouped, task) => {
+      if (task.dueDate === undefined) {
+        return grouped
+      }
+
+      const tasksForDate = grouped[task.dueDate] ?? []
+      tasksForDate.push(task)
+      grouped[task.dueDate] = tasksForDate
+
+      return grouped
+    }, {})
+  }
+
   async getSyncStates(): Promise<SyncState[]> {
     return this.database.syncStates.orderBy('courseId').toArray()
   }
