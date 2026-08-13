@@ -291,6 +291,14 @@ describe('TaskRepository', () => {
     ).rejects.toThrow('endDate must be in YYYY-MM-DD format.')
   })
 
+  //存在しない日付が入力された
+    it('rejects a non-existent date', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-02-29', '2026-03-01'),
+    ).rejects.toThrow('startDate must be a valid date.')
+  })
+
+
   it('rolls back a duplicate snapshot and strips unexpected personal fields', async () => {
     const unsafeTask = {
       ...createTaskInput(),
