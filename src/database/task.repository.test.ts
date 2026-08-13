@@ -374,4 +374,75 @@ describe('TaskRepository', () => {
       ],
     })
   })
+
+  //月境界テスト
+  it('groups tasks correctly across a month boundary', async () => {
+  await repository.replaceCourseSnapshot({
+    courseId: 'course-1',
+    fetchedDate: '2026-07-31',
+    tasks: [
+      createTaskInput({
+        courseWorkId: 'july-last',
+        title: '7月末',
+        dueDate: '2026-07-31',
+      }),
+      createTaskInput({
+        courseWorkId: 'august-first',
+        title: '8月初日',
+        dueDate: '2026-08-01',
+      }),
+    ],
+  })
+
+  //年境界テスト
+  it('groups tasks correctly across a year boundary', async () => {
+  await repository.replaceCourseSnapshot({
+    courseId: 'course-1',
+    fetchedDate: '2026-12-30',
+    tasks: [
+      createTaskInput({
+        courseWorkId: 'task-1',
+        title: '年末の課題',
+        dueDate: '2026-12-31',
+      }),
+      createTaskInput({
+        courseWorkId: 'task-2',
+        title: '年始の課題',
+        dueDate: '2027-01-01',
+      }),
+    ],
+  })
+
+  const tasks = await repository.getTasksGroupedByDueDate(
+    '2026-12-31',
+    '2027-01-01',
+  )
+
+  expect(tasks).toEqual({
+    '2026-12-31': [
+      expect.objectContaining({
+        courseWorkId: 'task-1',
+      }),
+    ],
+    '2027-01-01': [
+      expect.objectContaining({
+        courseWorkId: 'task-2',
+      }),
+    ],
+  })
+})
+
+  const tasks = await repository.getTasksGroupedByDueDate(
+    '2026-07-31',
+    '2026-08-01',
+  )
+
+  expect(Object.keys(tasks)).toEqual([
+    '2026-07-31',
+    '2026-08-01',
+  ])
+
+  expect(tasks['2026-07-31']).toHaveLength(1)
+  expect(tasks['2026-08-01']).toHaveLength(1)
+})
 })
