@@ -394,6 +394,20 @@ describe('TaskRepository', () => {
     ],
   })
 
+  const tasks = await repository.getTasksGroupedByDueDate(
+    '2026-07-31',
+    '2026-08-01',
+  )
+
+  expect(Object.keys(tasks)).toEqual([
+    '2026-07-31',
+    '2026-08-01',
+  ])
+
+  expect(tasks['2026-07-31']).toHaveLength(1)
+  expect(tasks['2026-08-01']).toHaveLength(1)
+})
+
   //年境界テスト
   it('groups tasks correctly across a year boundary', async () => {
   await repository.replaceCourseSnapshot({
@@ -430,19 +444,5 @@ describe('TaskRepository', () => {
       }),
     ],
   })
-})
-
-  const tasks = await repository.getTasksGroupedByDueDate(
-    '2026-07-31',
-    '2026-08-01',
-  )
-
-  expect(Object.keys(tasks)).toEqual([
-    '2026-07-31',
-    '2026-08-01',
-  ])
-
-  expect(tasks['2026-07-31']).toHaveLength(1)
-  expect(tasks['2026-08-01']).toHaveLength(1)
 })
 })
