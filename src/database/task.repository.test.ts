@@ -297,7 +297,16 @@ describe('TaskRepository', () => {
       repository.getUnsubmittedTasksInDateRange('2026-02-29', '2026-03-01'),
     ).rejects.toThrow('startDate must be a valid date.')
   })
-
+ it('rejects a non-existent day in a month', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-04-31', '2026-05-01'),
+    ).rejects.toThrow('startDate must be a valid date.')
+  })
+  it('rejects a non-existent month', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-13-01', '2026-12-31'),
+    ).rejects.toThrow('startDate must be a valid date.')
+  })
 
   it('rolls back a duplicate snapshot and strips unexpected personal fields', async () => {
     const unsafeTask = {
