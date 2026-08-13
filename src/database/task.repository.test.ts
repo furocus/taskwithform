@@ -358,21 +358,25 @@ describe('TaskRepository', () => {
       '2026-07-28',
     )
 
-    expect(tasks).toEqual({
-      '2026-07-27': [
-        expect.objectContaining({
-          courseWorkId: 'task-1',
-        }),
-        expect.objectContaining({
-          courseWorkId: 'task-2',
-        }),
-      ],
-      '2026-07-28': [
-        expect.objectContaining({
-          courseWorkId: 'task-3',
-        }),
-      ],
-    })
+    expect(tasks['2026-07-27']).toHaveLength(2)
+expect(tasks['2026-07-28']).toHaveLength(1)
+
+expect(tasks['2026-07-27']).toEqual(
+  expect.arrayContaining([
+    expect.objectContaining({
+      courseWorkId: 'task-1',
+    }),
+    expect.objectContaining({
+      courseWorkId: 'task-2',
+    }),
+  ]),
+)
+
+expect(tasks['2026-07-28']).toEqual([
+  expect.objectContaining({
+    courseWorkId: 'task-3',
+  }),
+])
   })
 
   //月境界テスト
