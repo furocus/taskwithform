@@ -359,142 +359,139 @@ describe('TaskRepository', () => {
     )
 
     expect(tasks['2026-07-27']).toHaveLength(2)
-expect(tasks['2026-07-28']).toHaveLength(1)
+    expect(tasks['2026-07-28']).toHaveLength(1)
 
-expect(tasks['2026-07-27']).toEqual(
-  expect.arrayContaining([
-    expect.objectContaining({
-      courseWorkId: 'task-1',
-    }),
-    expect.objectContaining({
-      courseWorkId: 'task-2',
-    }),
-  ]),
-)
+    expect(tasks['2026-07-27']).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          courseWorkId: 'task-1',
+        }),
+        expect.objectContaining({
+          courseWorkId: 'task-2',
+        }),
+      ]),
+    )
 
-expect(tasks['2026-07-28']).toEqual([
-  expect.objectContaining({
-    courseWorkId: 'task-3',
-  }),
-])
+    expect(tasks['2026-07-28']).toEqual([
+      expect.objectContaining({
+        courseWorkId: 'task-3',
+      }),
+    ])
   })
 
   //月境界テスト
   it('groups tasks correctly across a month boundary', async () => {
-  await repository.replaceCourseSnapshot({
-    courseId: 'course-1',
-    fetchedDate: '2026-07-31',
-    tasks: [
-      createTaskInput({
-        courseWorkId: 'july-last',
-        title: '7月末',
-        dueDate: '2026-07-31',
-      }),
-      createTaskInput({
-        courseWorkId: 'august-first',
-        title: '8月初日',
-        dueDate: '2026-08-01',
-      }),
-    ],
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-31',
+      tasks: [
+        createTaskInput({
+          courseWorkId: 'july-last',
+          title: '7月末',
+          dueDate: '2026-07-31',
+        }),
+        createTaskInput({
+          courseWorkId: 'august-first',
+          title: '8月初日',
+          dueDate: '2026-08-01',
+        }),
+      ],
+    })
+
+    const tasks = await repository.getTasksGroupedByDueDate(
+      '2026-07-31',
+      '2026-08-01',
+    )
+
+    expect(Object.keys(tasks)).toEqual(['2026-07-31', '2026-08-01'])
+
+    expect(tasks['2026-07-31']).toHaveLength(1)
+    expect(tasks['2026-08-01']).toHaveLength(1)
   })
-
-  const tasks = await repository.getTasksGroupedByDueDate(
-    '2026-07-31',
-    '2026-08-01',
-  )
-
-  expect(Object.keys(tasks)).toEqual([
-    '2026-07-31',
-    '2026-08-01',
-  ])
-
-  expect(tasks['2026-07-31']).toHaveLength(1)
-  expect(tasks['2026-08-01']).toHaveLength(1)
-})
 
   //年境界テスト
   it('groups tasks correctly across a year boundary', async () => {
-  await repository.replaceCourseSnapshot({
-    courseId: 'course-1',
-    fetchedDate: '2026-12-30',
-    tasks: [
-      createTaskInput({
-        courseWorkId: 'task-1',
-        title: '年末の課題',
-        dueDate: '2026-12-31',
-      }),
-      createTaskInput({
-        courseWorkId: 'task-2',
-        title: '年始の課題',
-        dueDate: '2027-01-01',
-      }),
-    ],
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-12-30',
+      tasks: [
+        createTaskInput({
+          courseWorkId: 'task-1',
+          title: '年末の課題',
+          dueDate: '2026-12-31',
+        }),
+        createTaskInput({
+          courseWorkId: 'task-2',
+          title: '年始の課題',
+          dueDate: '2027-01-01',
+        }),
+      ],
+    })
+
+    const tasks = await repository.getTasksGroupedByDueDate(
+      '2026-12-31',
+      '2027-01-01',
+    )
+
+    expect(tasks).toEqual({
+      '2026-12-31': [
+        expect.objectContaining({
+          courseWorkId: 'task-1',
+        }),
+      ],
+      '2027-01-01': [
+        expect.objectContaining({
+          courseWorkId: 'task-2',
+        }),
+      ],
+    })
   })
 
-  const tasks = await repository.getTasksGroupedByDueDate(
-    '2026-12-31',
-    '2027-01-01',
-  )
+  //うるう年テスト
+  it('groups tasks correctly across a leap day', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2028-02-27',
+      tasks: [
+        createTaskInput({
+          courseWorkId: 'feb-28',
+          title: '2月28日の課題',
+          dueDate: '2028-02-28',
+        }),
+        createTaskInput({
+          courseWorkId: 'feb-29',
+          title: 'うるう日の課題',
+          dueDate: '2028-02-29',
+        }),
+        createTaskInput({
+          courseWorkId: 'mar-01',
+          title: '3月1日の課題',
+          dueDate: '2028-03-01',
+        }),
+      ],
+    })
 
-  expect(tasks).toEqual({
-    '2026-12-31': [
-      expect.objectContaining({
-        courseWorkId: 'task-1',
-      }),
-    ],
-    '2027-01-01': [
-      expect.objectContaining({
-        courseWorkId: 'task-2',
-      }),
-    ],
-  })
-})
+    const tasks = await repository.getTasksGroupedByDueDate(
+      '2028-02-28',
+      '2028-03-01',
+    )
 
-//うるう年テスト
-it('groups tasks correctly across a leap day', async () => {
-  await repository.replaceCourseSnapshot({
-    courseId: 'course-1',
-    fetchedDate: '2028-02-27',
-    tasks: [
-      createTaskInput({
+    expect(tasks['2028-02-28']).toEqual([
+      expect.objectContaining({
         courseWorkId: 'feb-28',
-        title: '2月28日の課題',
-        dueDate: '2028-02-28',
       }),
-      createTaskInput({
+    ])
+
+    expect(tasks['2028-02-29']).toEqual([
+      expect.objectContaining({
         courseWorkId: 'feb-29',
-        title: 'うるう日の課題',
-        dueDate: '2028-02-29',
       }),
-      createTaskInput({
+    ])
+
+    expect(tasks['2028-03-01']).toEqual([
+      expect.objectContaining({
         courseWorkId: 'mar-01',
-        title: '3月1日の課題',
-        dueDate: '2028-03-01',
       }),
-    ],
+    ])
   })
-
-  const tasks = await repository.getTasksGroupedByDueDate(
-    '2028-02-28',
-    '2028-03-01',
-  )
-
-  expect(tasks['2028-02-28']).toEqual([
-    expect.objectContaining({
-      courseWorkId: 'feb-28',
-    }),
-  ])
-
-  expect(tasks['2028-02-29']).toEqual([
-    expect.objectContaining({
-      courseWorkId: 'feb-29',
-    }),
-  ])
-
-  expect(tasks['2028-03-01']).toEqual([
-    expect.objectContaining({
-      courseWorkId: 'mar-01',
-    }),
-  ])
-})
 })
