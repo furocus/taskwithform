@@ -280,24 +280,24 @@ describe('TaskRepository', () => {
   })
 
   //型式不一致
-    it('rejects a start date that is not in YYYY-MM-DD format', async () => {
+  it('rejects a start date that is not in YYYY-MM-DD format', async () => {
     await expect(
       repository.getUnsubmittedTasksInDateRange('2026-2-01', '2026-02-28'),
     ).rejects.toThrow('startDate must be in YYYY-MM-DD format.')
   })
-    it('rejects an end date that is not in YYYY-MM-DD format', async () => {
+  it('rejects an end date that is not in YYYY-MM-DD format', async () => {
     await expect(
       repository.getUnsubmittedTasksInDateRange('2026-02-01', '2026-2-28'),
     ).rejects.toThrow('endDate must be in YYYY-MM-DD format.')
   })
 
   //存在しない日付が入力された
-    it('rejects a non-existent date', async () => {
+  it('rejects a non-existent date', async () => {
     await expect(
       repository.getUnsubmittedTasksInDateRange('2026-02-29', '2026-03-01'),
     ).rejects.toThrow('startDate must be a valid date.')
   })
- it('rejects a non-existent day in a month', async () => {
+  it('rejects a non-existent day in a month', async () => {
     await expect(
       repository.getUnsubmittedTasksInDateRange('2026-04-31', '2026-05-01'),
     ).rejects.toThrow('startDate must be a valid date.')

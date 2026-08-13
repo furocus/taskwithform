@@ -199,7 +199,7 @@ export class TaskRepository {
     endDate: string,
   ): Promise<TaskRecord[]> {
     validateDateString(startDate, 'startDate')
-  validateDateString(endDate, 'endDate')
+    validateDateString(endDate, 'endDate')
     if (startDate > endDate) {
       throw new Error('startDate must not be after endDate.')
     }
