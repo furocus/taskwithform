@@ -272,6 +272,42 @@ describe('TaskRepository', () => {
     expect(tasks.map((task) => task.courseWorkId)).toEqual(['inside'])
   })
 
+  //同日期限の課題を科目名順に固定
+  it('sorts tasks with the same due date by title', async () => {
+  await repository.replaceCourseSnapshot({
+    courseId: 'course-1',
+    fetchedDate: '2026-07-26',
+    tasks: [
+      createTaskInput({
+        courseWorkId: 'task-z',
+        title: '数学',
+        dueDate: '2026-07-27',
+      }),
+      createTaskInput({
+        courseWorkId: 'task-a',
+        title: '英語',
+        dueDate: '2026-07-27',
+      }),
+      createTaskInput({
+        courseWorkId: 'task-m',
+        title: '国語',
+        dueDate: '2026-07-27',
+      }),
+    ],
+  })
+
+  const tasks = await repository.getUnsubmittedTasksInDateRange(
+    '2026-07-27',
+    '2026-07-27',
+  )
+
+  expect(tasks.map((task) => task.title)).toEqual([
+    '英語',
+    '国語',
+    '数学',
+  ])
+})
+
   //終了日が開始日より前
   it('rejects a calendar range whose start date is after its end date', async () => {
     await expect(
