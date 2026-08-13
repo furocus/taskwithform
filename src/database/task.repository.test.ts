@@ -285,6 +285,11 @@ describe('TaskRepository', () => {
       repository.getUnsubmittedTasksInDateRange('2026-2-01', '2026-02-28'),
     ).rejects.toThrow('startDate must be in YYYY-MM-DD format.')
   })
+    it('rejects an end date that is not in YYYY-MM-DD format', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-02-01', '2026-2-28'),
+    ).rejects.toThrow('endDate must be in YYYY-MM-DD format.')
+  })
 
   it('rolls back a duplicate snapshot and strips unexpected personal fields', async () => {
     const unsafeTask = {
