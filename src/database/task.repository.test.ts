@@ -272,10 +272,18 @@ describe('TaskRepository', () => {
     expect(tasks.map((task) => task.courseWorkId)).toEqual(['inside'])
   })
 
+  //終了日が開始日より前
   it('rejects a calendar range whose start date is after its end date', async () => {
     await expect(
       repository.getUnsubmittedTasksInDateRange('2026-07-31', '2026-07-26'),
     ).rejects.toThrow('startDate must not be after endDate')
+  })
+
+  //型式不一致
+    it('rejects a start date that is not in YYYY-MM-DD format', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-2-01', '2026-02-28'),
+    ).rejects.toThrow('startDate must be in YYYY-MM-DD format.')
   })
 
   it('rolls back a duplicate snapshot and strips unexpected personal fields', async () => {
