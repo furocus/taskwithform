@@ -320,4 +320,58 @@ describe('TaskRepository', () => {
     expect(await repository.getAllTasks()).toEqual([])
     expect(await repository.getSyncStates()).toEqual([])
   })
+  it('groups unsubmitted tasks by due date', async () => {
+  await repository.replaceCourseSnapshot({
+    courseId: 'course-1',
+    fetchedDate: '2026-07-26',
+    tasks: [
+      createTaskInput({
+        courseWorkId: 'task-1',
+        title: '数学',
+        dueDate: '2026-07-27',
+      }),
+      createTaskInput({
+        courseWorkId: 'task-2',
+        title: '英語',
+        dueDate: '2026-07-27',
+      }),
+      createTaskInput({
+        courseWorkId: 'task-3',
+        title: '国語',
+        dueDate: '2026-07-28',
+      }),
+      createTaskInput({
+        courseWorkId: 'task-4',
+        title: '期限なし',
+      }),
+      createTaskInput({
+        courseWorkId: 'task-5',
+        title: '提出済み',
+        dueDate: '2026-07-27',
+        status: 'submitted',
+      }),
+    ],
+  })
+
+  const tasks = await repository.getTasksGroupedByDueDate(
+    '2026-07-27',
+    '2026-07-28',
+  )
+
+  expect(tasks).toEqual({
+    '2026-07-27': [
+      expect.objectContaining({
+        courseWorkId: 'task-1',
+      }),
+      expect.objectContaining({
+        courseWorkId: 'task-2',
+      }),
+    ],
+    '2026-07-28': [
+      expect.objectContaining({
+        courseWorkId: 'task-3',
+      }),
+    ],
+  })
+})
 })
