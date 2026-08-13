@@ -449,4 +449,52 @@ expect(tasks['2026-07-28']).toEqual([
     ],
   })
 })
+
+//うるう年テスト
+it('groups tasks correctly across a leap day', async () => {
+  await repository.replaceCourseSnapshot({
+    courseId: 'course-1',
+    fetchedDate: '2028-02-27',
+    tasks: [
+      createTaskInput({
+        courseWorkId: 'feb-28',
+        title: '2月28日の課題',
+        dueDate: '2028-02-28',
+      }),
+      createTaskInput({
+        courseWorkId: 'feb-29',
+        title: 'うるう日の課題',
+        dueDate: '2028-02-29',
+      }),
+      createTaskInput({
+        courseWorkId: 'mar-01',
+        title: '3月1日の課題',
+        dueDate: '2028-03-01',
+      }),
+    ],
+  })
+
+  const tasks = await repository.getTasksGroupedByDueDate(
+    '2028-02-28',
+    '2028-03-01',
+  )
+
+  expect(tasks['2028-02-28']).toEqual([
+    expect.objectContaining({
+      courseWorkId: 'feb-28',
+    }),
+  ])
+
+  expect(tasks['2028-02-29']).toEqual([
+    expect.objectContaining({
+      courseWorkId: 'feb-29',
+    }),
+  ])
+
+  expect(tasks['2028-03-01']).toEqual([
+    expect.objectContaining({
+      courseWorkId: 'mar-01',
+    }),
+  ])
+})
 })
