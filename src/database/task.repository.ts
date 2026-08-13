@@ -204,11 +204,13 @@ export class TaskRepository {
       throw new Error('startDate must not be after endDate.')
     }
 
-    return this.database.tasks
-      .where('dueDate')
-      .between(startDate, endDate, true, true)
-      .filter((task) => task.status === 'unsubmitted')
-      .sortBy('dueDate')
+      const tasks = await this.database.tasks
+    .where('dueDate')
+    .between(startDate, endDate, true, true)
+    .filter((task) => task.status === 'unsubmitted')
+    .toArray()
+
+  return tasks.sort(compareTasksByDueDate)
   }
 
   async getTasksGroupedByDueDate(
