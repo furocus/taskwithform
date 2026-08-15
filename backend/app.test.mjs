@@ -1,11 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createRequestHandler } from './app.mjs'
+import {
+  GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
+  GOOGLE_GMAIL_READONLY_SCOPE,
+  GOOGLE_OAUTH_SCOPES,
+} from './auth/google-oauth.mjs'
 import { MemorySessionStore } from './auth/session-store.mjs'
-import { ClassroomRequestError } from './classroom/google-classroom.mjs'
+import {
+  ClassroomRequestError,
+  extractGoogleFormIdDetails,
+} from './classroom/google-classroom.mjs'
+import { GmailRequestError } from './gmail/google-gmail.mjs'
 
 const FRONTEND_ORIGIN = 'http://localhost:5173'
 const NOW = Date.parse('2026-07-30T08:00:00.000Z')
+const FORM_ID = '1FAIpQLSabcdefghijklmnopqrstuvwxyz12345'
 
 function createFakeOAuthService(overrides = {}) {
   return {
@@ -16,6 +27,7 @@ function createFakeOAuthService(overrides = {}) {
     exchangeCode: vi.fn(async () => ({
       accessToken: 'access-token',
       expiresAt: NOW + 60 * 60 * 1000,
+      grantedScopes: GOOGLE_OAUTH_SCOPES,
     })),
     revokeAccessToken: vi.fn(async () => {}),
     ...overrides,
@@ -25,6 +37,14 @@ function createFakeOAuthService(overrides = {}) {
 function createFakeClassroomService(overrides = {}) {
   return {
     countActiveCourses: vi.fn(async () => 3),
+    listCourseWorkWithForms: vi.fn(async () => []),
+    ...overrides,
+  }
+}
+
+function createFakeGmailService(overrides = {}) {
+  return {
+    checkConnection: vi.fn(async () => {}),
     ...overrides,
   }
 }
@@ -73,6 +93,7 @@ describe('backend authentication routes', () => {
   let now
   let oauthService
   let classroomService
+  let gmailService
   let logger
   let handler
 
@@ -80,6 +101,7 @@ describe('backend authentication routes', () => {
     now = NOW
     oauthService = createFakeOAuthService()
     classroomService = createFakeClassroomService()
+    gmailService = createFakeGmailService()
     logger = {
       error: vi.fn(),
       warn: vi.fn(),
@@ -96,6 +118,7 @@ describe('backend authentication routes', () => {
       sessionStore,
       oauthServiceFactory: () => oauthService,
       classroomServiceFactory: () => classroomService,
+      gmailServiceFactory: () => gmailService,
       logger,
     })
   })
@@ -193,6 +216,7 @@ describe('backend authentication routes', () => {
       authenticated: true,
       expiresAt: '2026-07-30T09:00:00.000Z',
     })
+    expect(sessionResponse.header('cache-control')).toBe('private, no-store')
   })
 
   it('rejects a callback whose state does not match', async () => {
@@ -290,6 +314,7 @@ describe('backend authentication routes', () => {
 
     expect(response.status).toBe(200)
     expect(response.json()).toEqual({ count: 3 })
+    expect(response.header('cache-control')).toBe('private, no-store')
     expect(classroomService.countActiveCourses).toHaveBeenCalledWith(
       'access-token',
     )
@@ -342,6 +367,54 @@ describe('backend authentication routes', () => {
     expect(sessionResponse.json()).toMatchObject({ authenticated: true })
   })
 
+  it('does not call Classroom when the courses scope was not granted', async () => {
+    oauthService.exchangeCode.mockResolvedValueOnce({
+      accessToken: 'access-token',
+      expiresAt: NOW + 60 * 60 * 1000,
+      grantedScopes: [GOOGLE_GMAIL_READONLY_SCOPE],
+    })
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/courses/count',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(403)
+    expect(response.json()).toMatchObject({
+      error: { code: 'classroom_forbidden' },
+    })
+    expect(classroomService.countActiveCourses).not.toHaveBeenCalled()
+    expect(
+      (
+        await sendRequest(handler, {
+          url: '/api/auth/session',
+          headers: { cookie: sessionCookie },
+        })
+      ).json(),
+    ).toMatchObject({ authenticated: true })
+  })
+
+  it('requires both Classroom scopes before listing course work', async () => {
+    oauthService.exchangeCode.mockResolvedValueOnce({
+      accessToken: 'access-token',
+      expiresAt: NOW + 60 * 60 * 1000,
+      grantedScopes: [GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE],
+    })
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/coursework/forms',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(403)
+    expect(response.json()).toMatchObject({
+      error: { code: 'classroom_forbidden' },
+    })
+    expect(classroomService.listCourseWorkWithForms).not.toHaveBeenCalled()
+  })
+
   it('maps Classroom network and server failures to a safe gateway error', async () => {
     classroomService.countActiveCourses.mockRejectedValueOnce(
       new ClassroomRequestError('network_error'),
@@ -374,6 +447,482 @@ describe('backend authentication routes', () => {
     expect(serverErrorResponse.json()).toMatchObject({
       error: { code: 'classroom_unavailable' },
     })
+  })
+
+  it('returns Classroom course work and Form IDs to an authenticated user', async () => {
+    const courseWork = [
+      {
+        courseId: 'course-1',
+        courseName: '数学',
+        courseWorkId: 'work-1',
+        courseWorkType: 'ASSIGNMENT',
+        title: '確認テスト',
+        forms: [
+          {
+            formId: 'form-id',
+            formIdType: 'standard',
+            formUrl: 'https://docs.google.com/forms/d/form-id/viewform',
+          },
+        ],
+      },
+    ]
+    classroomService.listCourseWorkWithForms.mockResolvedValueOnce(courseWork)
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/coursework/forms',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.json()).toEqual({ courseWork })
+    expect(classroomService.listCourseWorkWithForms).toHaveBeenCalledWith(
+      'access-token',
+    )
+  })
+
+  it('requires authentication before listing Classroom course work', async () => {
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/coursework/forms',
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.json()).toMatchObject({
+      error: { code: 'unauthenticated' },
+    })
+    expect(classroomService.listCourseWorkWithForms).not.toHaveBeenCalled()
+  })
+
+  it('maps a Classroom course work permission error safely', async () => {
+    classroomService.listCourseWorkWithForms.mockRejectedValueOnce(
+      new ClassroomRequestError('upstream_error', { status: 403 }),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/coursework/forms',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(403)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'classroom_forbidden',
+        message: 'Google Classroom access was denied.',
+      },
+    })
+  })
+
+  it('confirms Gmail connectivity without returning profile data', async () => {
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.json()).toEqual({ connected: true })
+    expect(gmailService.checkConnection).toHaveBeenCalledWith('access-token')
+  })
+
+  it('keeps Classroom usable when partial consent omits Gmail', async () => {
+    oauthService.exchangeCode.mockResolvedValueOnce({
+      accessToken: 'access-token',
+      expiresAt: NOW + 60 * 60 * 1000,
+      grantedScopes: [
+        GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+        GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
+      ],
+    })
+    const { sessionCookie } = await completeAuthentication()
+
+    const classroomResponse = await sendRequest(handler, {
+      url: '/api/classroom/courses/count',
+      headers: { cookie: sessionCookie },
+    })
+    const gmailResponse = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(classroomResponse.status).toBe(200)
+    expect(gmailResponse.status).toBe(403)
+    expect(gmailResponse.json()).toEqual({
+      error: {
+        code: 'gmail_forbidden',
+        message: 'Gmail access was denied.',
+      },
+    })
+    expect(gmailService.checkConnection).not.toHaveBeenCalled()
+    expect(
+      (
+        await sendRequest(handler, {
+          url: '/api/auth/session',
+          headers: { cookie: sessionCookie },
+        })
+      ).json(),
+    ).toMatchObject({ authenticated: true })
+  })
+
+  it('does not call Gmail when the Gmail scope was not granted', async () => {
+    oauthService.exchangeCode.mockResolvedValueOnce({
+      accessToken: 'access-token',
+      expiresAt: NOW + 60 * 60 * 1000,
+      grantedScopes: [GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE],
+    })
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(403)
+    expect(response.json()).toMatchObject({
+      error: { code: 'gmail_forbidden' },
+    })
+    expect(gmailService.checkConnection).not.toHaveBeenCalled()
+  })
+
+  it('requires authentication before checking Gmail connectivity', async () => {
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.json()).toMatchObject({
+      error: { code: 'unauthenticated' },
+    })
+    expect(gmailService.checkConnection).not.toHaveBeenCalled()
+  })
+
+  it('maps Gmail permission errors without exposing upstream details', async () => {
+    gmailService.checkConnection.mockRejectedValueOnce(
+      new GmailRequestError('permission_denied', { status: 403 }),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(403)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'gmail_forbidden',
+        message: 'Gmail access was denied.',
+      },
+    })
+  })
+
+  it('keeps an unclassified Gmail 403 as a generic unavailable error', async () => {
+    gmailService.checkConnection.mockRejectedValueOnce(
+      new GmailRequestError('upstream_error', { status: 403 }),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(502)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'gmail_unavailable',
+        message: 'Gmail is temporarily unavailable.',
+      },
+    })
+  })
+
+  it('maps Gmail rate limits to a temporary error without treating them as permission errors', async () => {
+    gmailService.checkConnection.mockRejectedValueOnce(
+      new GmailRequestError('rate_limited', { status: 429 }),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(503)
+    expect(response.header('cache-control')).toBe('private, no-store')
+    expect(response.json()).toEqual({
+      error: {
+        code: 'gmail_rate_limited',
+        message: 'Gmail is temporarily rate limited.',
+      },
+    })
+  })
+
+  it('clears the session after a Gmail unauthorized response', async () => {
+    gmailService.checkConnection.mockRejectedValueOnce(
+      new GmailRequestError('upstream_error', { status: 401 }),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.json()).toMatchObject({
+      error: { code: 'session_expired' },
+    })
+    expect(response.header('set-cookie')).toContain('Max-Age=0')
+  })
+
+  it('maps Gmail network failures to a safe gateway error', async () => {
+    gmailService.checkConnection.mockRejectedValueOnce(
+      new GmailRequestError('network_error'),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/gmail/connection',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(502)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'gmail_unavailable',
+        message: 'Gmail is temporarily unavailable.',
+      },
+    })
+  })
+
+  it('returns only the safe Form response fields with private no-store caching', async () => {
+    gmailService.checkFormResponse = vi.fn(async () => ({
+      status: 'submitted',
+      receiptReceivedAt: '2026-08-05T00:00:00.000Z',
+      messageId: 'must-not-be-returned',
+    }))
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: `/api/gmail/forms/${FORM_ID}/response`,
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.header('cache-control')).toBe('private, no-store')
+    expect(response.json()).toEqual({
+      status: 'submitted',
+      receiptReceivedAt: '2026-08-05T00:00:00.000Z',
+    })
+    expect(gmailService.checkFormResponse).toHaveBeenCalledWith(
+      'access-token',
+      FORM_ID,
+    )
+  })
+
+  it('supports an authenticated unreviewable Form response', async () => {
+    gmailService.checkFormResponse = vi.fn(async () => ({
+      status: 'unreviewable',
+    }))
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: `/api/gmail/forms/${FORM_ID}/response`,
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.json()).toEqual({ status: 'unreviewable' })
+  })
+
+  it('passes the Classroom-produced form-id through the Gmail response contract', async () => {
+    const { formId } = extractGoogleFormIdDetails(
+      'https://docs.google.com/forms/d/form-id/viewform',
+    )
+    gmailService.checkFormResponse = vi.fn(async () => ({
+      status: 'needsReview',
+    }))
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: `/api/gmail/forms/${formId}/response`,
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(gmailService.checkFormResponse).toHaveBeenCalledWith(
+      'access-token',
+      formId,
+    )
+  })
+
+  it('normalizes needsReview and rejects non-canonical submitted timestamps', async () => {
+    const { sessionCookie } = await completeAuthentication()
+    gmailService.checkFormResponse = vi.fn()
+
+    gmailService.checkFormResponse.mockResolvedValueOnce({
+      status: 'needsReview',
+      messageId: 'must-not-be-returned',
+      body: 'secret answer content',
+    })
+    const reviewResponse = await sendRequest(handler, {
+      url: `/api/gmail/forms/${FORM_ID}/response`,
+      headers: { cookie: sessionCookie },
+    })
+    expect(reviewResponse.status).toBe(200)
+    expect(reviewResponse.json()).toEqual({ status: 'needsReview' })
+    expect(reviewResponse.body).not.toContain('secret')
+
+    for (const receiptReceivedAt of [
+      'not-a-date',
+      '2026-08-05T00:00:00Z',
+      '2026-08-05T00:00:00.000+00:00',
+    ]) {
+      gmailService.checkFormResponse.mockResolvedValueOnce({
+        status: 'submitted',
+        receiptReceivedAt,
+      })
+      const invalidTimestampResponse = await sendRequest(handler, {
+        url: `/api/gmail/forms/${FORM_ID}/response`,
+        headers: { cookie: sessionCookie },
+      })
+      expect(invalidTimestampResponse.status).toBe(502)
+      expect(invalidTimestampResponse.json()).toMatchObject({
+        error: { code: 'gmail_unavailable' },
+      })
+    }
+
+    gmailService.checkFormResponse.mockResolvedValueOnce({
+      status: 'unknown',
+      receiptReceivedAt: '2026-08-05T00:00:00.000Z',
+    })
+    const unknownStatusResponse = await sendRequest(handler, {
+      url: `/api/gmail/forms/${FORM_ID}/response`,
+      headers: { cookie: sessionCookie },
+    })
+    expect(unknownStatusResponse.status).toBe(502)
+    expect(unknownStatusResponse.json()).toMatchObject({
+      error: { code: 'gmail_unavailable' },
+    })
+  })
+
+  it('requires authentication and Gmail scope before checking a Form response', async () => {
+    gmailService.checkFormResponse = vi.fn()
+    const unauthenticatedResponse = await sendRequest(handler, {
+      url: `/api/gmail/forms/${FORM_ID}/response`,
+    })
+    expect(unauthenticatedResponse.status).toBe(401)
+    expect(gmailService.checkFormResponse).not.toHaveBeenCalled()
+
+    oauthService.exchangeCode.mockResolvedValueOnce({
+      accessToken: 'access-token',
+      expiresAt: NOW + 60 * 60 * 1000,
+      grantedScopes: [GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE],
+    })
+    const { sessionCookie } = await completeAuthentication()
+    const forbiddenResponse = await sendRequest(handler, {
+      url: `/api/gmail/forms/${FORM_ID}/response`,
+      headers: { cookie: sessionCookie },
+    })
+    expect(forbiddenResponse.status).toBe(403)
+    expect(forbiddenResponse.json()).toMatchObject({
+      error: { code: 'gmail_forbidden' },
+    })
+    expect(gmailService.checkFormResponse).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid IDs and malformed route paths without calling Gmail', async () => {
+    gmailService.checkFormResponse = vi.fn()
+    const { sessionCookie } = await completeAuthentication()
+    for (const url of [
+      '/api/gmail/forms/form-id%22%20OR%20from%3Aattacker%40example.com/response',
+      '/api/gmail/forms/form%20id/response',
+      '/api/gmail/forms/form%2Fid/response',
+      `/api/gmail/forms/${'a'.repeat(513)}/response`,
+      '/api/gmail/forms/%E0%A4%A/response',
+    ]) {
+      const response = await sendRequest(handler, {
+        url,
+        headers: { cookie: sessionCookie },
+      })
+      expect(response.status).toBe(400)
+      expect(response.json()).toMatchObject({
+        error: { code: 'invalid_form_id' },
+      })
+    }
+
+    for (const url of [
+      `/api/gmail/forms/${FORM_ID}/response/`,
+      `/api/gmail/forms/${FORM_ID}/response/extra`,
+      `/api/gmail/forms//response`,
+    ]) {
+      const response = await sendRequest(handler, {
+        url,
+        headers: { cookie: sessionCookie },
+      })
+      expect(response.status).toBe(404)
+    }
+    expect(gmailService.checkFormResponse).not.toHaveBeenCalled()
+  })
+
+  it('maps Form response expiry, permission, rate-limit, and unavailable errors safely', async () => {
+    const { sessionCookie } = await completeAuthentication()
+    gmailService.checkFormResponse = vi.fn()
+    const cases = [
+      {
+        error: new GmailRequestError('permission_denied', { status: 403 }),
+        status: 403,
+        code: 'gmail_forbidden',
+      },
+      {
+        error: new GmailRequestError('rate_limited', { status: 429 }),
+        status: 503,
+        code: 'gmail_rate_limited',
+      },
+      {
+        error: new GmailRequestError('invalid_response', {
+          cause: new Error('secret upstream body'),
+        }),
+        status: 502,
+        code: 'gmail_unavailable',
+      },
+      {
+        error: new GmailRequestError('operation_timeout'),
+        status: 502,
+        code: 'gmail_unavailable',
+      },
+      {
+        error: new GmailRequestError('upstream_error', { status: 401 }),
+        status: 401,
+        code: 'session_expired',
+      },
+    ]
+
+    for (const { error, status, code } of cases) {
+      gmailService.checkFormResponse.mockRejectedValueOnce(error)
+      const response = await sendRequest(handler, {
+        url: `/api/gmail/forms/${FORM_ID}/response`,
+        headers: { cookie: sessionCookie },
+      })
+      expect(response.status).toBe(status)
+      expect(response.json()).toEqual({
+        error: {
+          code,
+          message:
+            code === 'session_expired'
+              ? 'The Google session has expired.'
+              : code === 'gmail_forbidden'
+                ? 'Gmail access was denied.'
+                : code === 'gmail_rate_limited'
+                  ? 'Gmail is temporarily rate limited.'
+                  : 'Gmail is temporarily unavailable.',
+        },
+      })
+      expect(response.body).not.toContain('secret')
+      expect(response.body).not.toContain('upstream')
+    }
+    expect(logger.error).not.toHaveBeenCalled()
   })
 
   it('clears the session even when Google token revocation fails', async () => {
