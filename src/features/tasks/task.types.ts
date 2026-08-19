@@ -10,4 +10,5 @@ export interface Task {
   dueDate: string
   warning: string
   answerStatus: AnswerStatus
+  formUrls?: string[]
 }

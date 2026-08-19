@@ -45,7 +45,7 @@ const statusStyle = computed(() => {
     },
     needsReview: {
       backgroundColor: 'var(--color-orange-soft)',
-      color: 'var(--color-text-primary)',
+      color: 'var(--color-warning)',
       borderColor: 'var(--color-orange)',
     },
   }
