@@ -90,7 +90,7 @@ function compareTaskDetails(a: TaskRecord, b: TaskRecord): number {
 
 function compareTasksByDueDate(a: TaskRecord, b: TaskRecord): number {
   if (a.dueDate === undefined && b.dueDate === undefined) {
-    return a.title.localeCompare(b.title, 'ja')
+    return compareTaskTieBreaker(a, b)
   }
 
   if (a.dueDate === undefined) {
@@ -102,7 +102,39 @@ function compareTasksByDueDate(a: TaskRecord, b: TaskRecord): number {
   }
 
   const dateOrder = a.dueDate.localeCompare(b.dueDate)
-  return dateOrder === 0 ? a.title.localeCompare(b.title, 'ja') : dateOrder
+
+  if (dateOrder !== 0) {
+    return dateOrder
+  }
+
+  return compareTaskTieBreaker(a, b)
+}
+
+function compareTaskTieBreaker(a: TaskRecord, b: TaskRecord): number {
+  const titleComparison = a.title.localeCompare(b.title, 'ja')
+
+  if (titleComparison !== 0) {
+    return titleComparison
+  }
+
+  const courseNameComparison = a.courseName.localeCompare(
+    b.courseName,
+    'ja',
+  )
+
+  if (courseNameComparison !== 0) {
+    return courseNameComparison
+  }
+
+  const courseWorkIdComparison = a.courseWorkId.localeCompare(
+    b.courseWorkId,
+  )
+
+  if (courseWorkIdComparison !== 0) {
+    return courseWorkIdComparison
+  }
+
+  return a.externalKey.localeCompare(b.externalKey)
 }
 
 export class TaskRepository {
