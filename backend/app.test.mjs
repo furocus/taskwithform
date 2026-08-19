@@ -419,4 +419,24 @@ describe('backend authentication routes', () => {
       error: { code: 'invalid_origin' },
     })
   })
+
+  it('handles GET /api/gmail/forms/:formId/response for authenticated sessions', async () => {
+    const unauthenticated = await sendRequest(handler, {
+      method: 'GET',
+      url: '/api/gmail/forms/sample-form/response',
+    })
+    expect(unauthenticated.status).toBe(401)
+
+    const { sessionCookie } = await completeAuthentication()
+    const authenticated = await sendRequest(handler, {
+      method: 'GET',
+      url: '/api/gmail/forms/sample-form/response',
+      headers: { cookie: sessionCookie },
+    })
+    expect(authenticated.status).toBe(200)
+    expect(authenticated.json()).toEqual({
+      formId: 'sample-form',
+      status: 'submitted',
+    })
+  })
 })

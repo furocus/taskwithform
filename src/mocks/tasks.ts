@@ -10,6 +10,7 @@ export const mockTasks: Task[] = [
     dueDate: '7月24日',
     warning: '今日まで！',
     answerStatus: 'unreviewed',
+    formUrls: [],
   },
   {
     id: 2,
@@ -20,6 +21,7 @@ export const mockTasks: Task[] = [
     dueDate: '7月26日',
     warning: 'あと3日',
     answerStatus: 'reviewing',
+    formUrls: ['https://forms.google.com/needs-review-form'],
   },
   {
     id: 3,
@@ -30,5 +32,6 @@ export const mockTasks: Task[] = [
     dueDate: '7月28日',
     warning: 'あと5日',
     answerStatus: 'submitted',
+    formUrls: ['https://forms.google.com/answered-form'],
   },
 ]

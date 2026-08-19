@@ -56,4 +56,39 @@ describe('TaskCard', () => {
     expect(wrapper.find('article').attributes('tabindex')).toBeUndefined()
     expect(wrapper.find('article').classes()).not.toContain('cursor-pointer')
   })
+
+  it('shows a confirmation button only for form-attached tasks and disables it while checking', async () => {
+    const onConfirmAnswer = vi.fn()
+    const wrapper = mount(TaskCard, {
+      props: {
+        task: {
+          ...sampleTask,
+          formUrls: ['https://forms.google.com/abc'],
+        },
+        onConfirmAnswer,
+        isConfirming: true,
+      },
+    })
+
+    const button = wrapper.get('button[data-test="confirm-answer"]')
+    expect(button.attributes('disabled')).toBe('')
+    expect(button.text()).toContain('確認中')
+
+    await button.trigger('click')
+    expect(onConfirmAnswer).not.toHaveBeenCalled()
+
+    const noFormWrapper = mount(TaskCard, {
+      props: {
+        task: {
+          ...sampleTask,
+          formUrls: [],
+        },
+        onConfirmAnswer,
+      },
+    })
+
+    expect(noFormWrapper.find('[data-test="confirm-answer"]').exists()).toBe(
+      false,
+    )
+  })
 })

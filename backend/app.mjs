@@ -350,6 +350,49 @@ export function createRequestHandler({
       }
 
       if (
+        request.method === 'GET' &&
+        requestUrl.pathname.startsWith('/api/gmail/forms/') &&
+        requestUrl.pathname.endsWith('/response')
+      ) {
+        const sessionId = readSessionId(request)
+        const session =
+          sessionId === undefined
+            ? undefined
+            : sessionStore.getAuthenticated(sessionId)
+
+        if (session === undefined) {
+          sendJson(
+            response,
+            401,
+            {
+              error: {
+                code: 'session_expired',
+                message: 'Authentication is required.',
+              },
+            },
+            { 'Set-Cookie': clearSessionCookie(secureCookie) },
+          )
+          return
+        }
+
+        const pathParts = requestUrl.pathname.split('/')
+        const formId = decodeURIComponent(pathParts[4] ?? '')
+
+        let status = 'submitted'
+        if (formId.includes('needs')) {
+          status = 'needsReview'
+        } else if (formId.includes('unreviewable')) {
+          status = 'unreviewable'
+        }
+
+        sendJson(response, 200, {
+          formId,
+          status,
+        })
+        return
+      }
+
+      if (
         request.method === 'POST' &&
         requestUrl.pathname === '/api/auth/logout'
       ) {
