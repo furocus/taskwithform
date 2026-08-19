@@ -53,13 +53,14 @@ ClassroomとFormから課題情報を取得し、進捗を管理するWebアプ�
 
 ## Google OAuthを使って動作確認する
 
-Google Classroomのコース件数を取得するには、Google CloudでOAuthクライアントを作成し、ローカル環境変数を設定します。
+Google Classroomのコースと課題、Gmailの接続状態を取得するには、Google CloudでOAuthクライアントを作成し、ローカル環境変数を設定します。
 
 1. Google CloudプロジェクトでGoogle Classroom APIを有効にする
-2. OAuth同意画面を設定する
-3. 「ウェブ アプリケーション」種類のOAuthクライアントを作成する
-4. 承認済みのリダイレクトURIに`http://localhost:3000/api/auth/google/callback`を登録する
-5. `.env.example`を`.env`へコピーし、発行されたクライアントIDとクライアントシークレットを設定する
+2. 同じプロジェクトでGmail APIを有効にする
+3. OAuth同意画面を設定する
+4. 「ウェブ アプリケーション」種類のOAuthクライアントを作成する
+5. 承認済みのリダイレクトURIに`http://localhost:3000/api/auth/google/callback`を登録する
+6. `.env.example`を`.env`へコピーし、発行されたクライアントIDとクライアントシークレットを設定する
 
 ```bash
 cp .env.example .env
@@ -74,11 +75,19 @@ FRONTEND_ORIGIN=http://localhost:5173
 
 `.env`には秘密情報が含まれるためGitへコミットしないでください。
 
-設定後、`./dev up`を実行し、`http://localhost:5173/login`からログインします。許可を求めるGoogle Classroomスコープは読み取り専用です。メイン画面にはACTIVEなコースの合計件数だけを表示し、コース名やIDは表示しません。
+設定後、`./dev up`を実行し、`http://localhost:5173/login`からログインします。許可を求めるGoogle ClassroomとGmailのスコープは読み取り専用です。権限追加前にログイン済みの場合は、一度ログアウトして再ログインしてください。
+
+認証後は次のバックエンドAPIを利用できます。
+
+- `GET /api/classroom/courses/count`: ACTIVEなコースの合計件数
+- `GET /api/classroom/coursework/forms`: PUBLISHEDな課題と添付されたGoogle FormのURL identifier（`formId`）・形式（`formIdType`）
+- `GET /api/gmail/connection`: Gmail APIへ接続できる場合は`{"connected":true}`
+
+Gmail接続確認ではメール一覧やメール本文を取得しません。`formId`はForms APIのcanonical resource IDではなく、Google Form URL中のopaque identifierです。
 
 認証情報はバックエンドのメモリ上だけに保持します。アクセストークンの期限切れまたはバックエンドの再起動後は、再ログインが必要です。
 
-実装内容、依存関係、型と設計の判断は[Issue 10 Google OAuth実装ノート](docs/obsidian/issue-10-google-oauth.md)にまとめています。
+OAuth基盤の設計は[Issue 10 Google OAuth実装ノート](docs/obsidian/issue-10-google-oauth.md)、課題・Form ID取得とGmail接続確認の設計は[Issue 18実装ノート](docs/obsidian/issue-18-classroom-gmail-foundation.md)にまとめています。
 
 ## 開発環境のセットアップ
 

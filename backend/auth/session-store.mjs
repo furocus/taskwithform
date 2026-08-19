@@ -53,12 +53,21 @@ export class MemorySessionStore {
     return true
   }
 
-  createAuthenticated({ accessToken, expiresAt }) {
+  createAuthenticated({ accessToken, expiresAt, grantedScopes }) {
     const sessionId = this.createId()
     this.sessions.set(sessionId, {
       kind: 'authenticated',
       accessToken,
       expiresAt,
+      grantedScopes: Array.isArray(grantedScopes)
+        ? [
+            ...new Set(
+              grantedScopes.filter(
+                (scope) => typeof scope === 'string' && scope.length > 0,
+              ),
+            ),
+          ]
+        : [],
     })
     return sessionId
   }
