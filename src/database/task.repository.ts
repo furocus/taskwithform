@@ -117,18 +117,13 @@ function compareTaskTieBreaker(a: TaskRecord, b: TaskRecord): number {
     return titleComparison
   }
 
-  const courseNameComparison = a.courseName.localeCompare(
-    b.courseName,
-    'ja',
-  )
+  const courseNameComparison = a.courseName.localeCompare(b.courseName, 'ja')
 
   if (courseNameComparison !== 0) {
     return courseNameComparison
   }
 
-  const courseWorkIdComparison = a.courseWorkId.localeCompare(
-    b.courseWorkId,
-  )
+  const courseWorkIdComparison = a.courseWorkId.localeCompare(b.courseWorkId)
 
   if (courseWorkIdComparison !== 0) {
     return courseWorkIdComparison
