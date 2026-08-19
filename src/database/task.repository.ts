@@ -69,6 +69,25 @@ function validateDateString(value: string, name: string): void {
   }
 }
 
+function compareTaskDetails(a: TaskRecord, b: TaskRecord): number {
+  const titleOrder = a.title.localeCompare(b.title, 'ja')
+  if (titleOrder !== 0) {
+    return titleOrder
+  }
+
+  const courseNameOrder = a.courseName.localeCompare(b.courseName, 'ja')
+  if (courseNameOrder !== 0) {
+    return courseNameOrder
+  }
+
+  const courseWorkIdOrder = a.courseWorkId.localeCompare(b.courseWorkId)
+  if (courseWorkIdOrder !== 0) {
+    return courseWorkIdOrder
+  }
+
+  return a.externalKey.localeCompare(b.externalKey)
+}
+
 function compareTasksByDueDate(a: TaskRecord, b: TaskRecord): number {
   if (a.dueDate === undefined && b.dueDate === undefined) {
     return a.title.localeCompare(b.title, 'ja')
