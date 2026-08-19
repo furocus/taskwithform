@@ -556,4 +556,51 @@ describe('TaskRepository', () => {
       }),
     ])
   })
+
+  // 同一期限日かつ同一タイトルの課題も安定した順序で取得する
+  it('sorts tasks with the same due date and title by course name', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-a',
+      fetchedDate: '2026-08-19',
+      tasks: [
+        createTaskInput({
+          courseId: 'course-a',
+          courseName: '数学',
+          courseWorkId: 'work-a',
+          title: '課題',
+          dueDate: '2026-08-20',
+        }),
+      ],
+    })
+
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-b',
+      fetchedDate: '2026-08-19',
+      tasks: [
+        createTaskInput({
+          courseId: 'course-b',
+          courseName: '英語',
+          courseWorkId: 'work-b',
+          title: '課題',
+          dueDate: '2026-08-20',
+        }),
+      ],
+    })
+
+    const result = await repository.getTasksGroupedByDueDate(
+      '2026-08-20',
+      '2026-08-20',
+    )
+
+    expect(result['2026-08-20']).toEqual([
+      expect.objectContaining({
+        courseName: '英語',
+        title: '課題',
+      }),
+      expect.objectContaining({
+        courseName: '数学',
+        title: '課題',
+      }),
+    ])
+  })
 })
