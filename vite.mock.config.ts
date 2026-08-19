@@ -70,6 +70,23 @@ export function createMockApiPlugin(): Plugin {
             return
           }
 
+          if (
+            method === 'GET' &&
+            pathname.startsWith('/api/gmail/forms/') &&
+            pathname.endsWith('/response')
+          ) {
+            const parts = pathname.split('/')
+            const formId = decodeURIComponent(parts[4] ?? '')
+            const status = formId.includes('needs')
+              ? 'needsReview'
+              : formId.includes('unreviewable')
+                ? 'unreviewable'
+                : 'submitted'
+
+            sendJson(response, 200, { formId, status })
+            return
+          }
+
           if (method === 'POST' && pathname === '/api/auth/logout') {
             sendNoContent(response)
             return

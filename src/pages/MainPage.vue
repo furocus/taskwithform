@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import ClassroomConnectionPanel from '../features/auth/components/ClassroomConnectionPanel.vue'
-import { mockAnswerConfirmationApi } from '../features/tasks/answerConfirmation.api'
+import { checkTaskAnswerConfirmation } from '../features/tasks/answerConfirmation.api'
 import type { Task } from '../features/tasks/task.types'
 import TaskList from '../features/tasks/components/TaskList.vue'
 import { mockTasks } from '../mocks/tasks'
@@ -50,7 +50,7 @@ const handleConfirmAnswer = async (taskId: number) => {
   confirmationErrors[taskId] = null
 
   try {
-    const result = await mockAnswerConfirmationApi.checkTaskAnswerConfirmation({
+    const result = await checkTaskAnswerConfirmation({
       taskId: String(taskId),
       formUrls: task.formUrls,
     })

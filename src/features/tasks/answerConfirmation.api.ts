@@ -1,7 +1,12 @@
 import type { AnswerStatus } from './task.types'
 
 export type FormConfirmationStatus =
-  'answered' | 'pending' | 'needs_review' | 'unreviewable'
+  | 'submitted'
+  | 'unreviewable'
+  | 'needsReview'
+  | 'answered'
+  | 'needs_review'
+  | 'pending'
 
 export interface FormConfirmationResult {
   formUrl: string
@@ -51,6 +56,21 @@ export function createAnswerConfirmationError(
   return error
 }
 
+export function extractFormId(formUrl: string): string {
+  try {
+    const url = new URL(formUrl)
+    const segments = url.pathname.split('/').filter(Boolean)
+    if (segments.length > 0) {
+      return segments[segments.length - 1]!
+    }
+  } catch {
+    // not a valid URL, fall back to string manipulation
+  }
+  const clean = formUrl.replace(/\/+$/, '')
+  const lastPart = clean.split('/').pop()
+  return lastPart || formUrl
+}
+
 export function aggregateAnswerConfirmationResults(
   results: readonly FormConfirmationResult[],
 ): AnswerStatus {
@@ -58,30 +78,29 @@ export function aggregateAnswerConfirmationResults(
     return 'unreviewed'
   }
 
-  const hasAnswered = results.some((result) => result.status === 'answered')
   const hasNeedsReview = results.some(
-    (result) => result.status === 'needs_review',
+    (result) =>
+      result.status === 'needsReview' || result.status === 'needs_review',
   )
 
-  if (hasAnswered && results.every((result) => result.status === 'answered')) {
-    return 'submitted'
-  }
-
-  if (hasAnswered || hasNeedsReview) {
+  if (hasNeedsReview) {
     return 'needsReview'
   }
 
-  if (results.every((result) => result.status === 'pending')) {
-    return 'unreviewable'
+  const allSubmitted = results.every(
+    (result) => result.status === 'submitted' || result.status === 'answered',
+  )
+
+  if (allSubmitted) {
+    return 'submitted'
   }
 
-  if (
-    results.every(
-      (result) =>
-        result.status === 'pending' || result.status === 'unreviewable',
-    )
-  ) {
-    return 'unreviewable'
+  const hasSubmitted = results.some(
+    (result) => result.status === 'submitted' || result.status === 'answered',
+  )
+
+  if (hasSubmitted) {
+    return 'needsReview'
   }
 
   return 'unreviewable'
@@ -118,58 +137,50 @@ export async function checkTaskAnswerConfirmation(
     }
   }
 
-  const response = await fetchImplementation('/api/tasks/answer-confirmation', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      taskId: input.taskId,
-      formUrls: input.formUrls,
+  const formResults: FormConfirmationResult[] = await Promise.all(
+    input.formUrls.map(async (formUrl) => {
+      const formId = extractFormId(formUrl)
+      const response = await fetchImplementation(
+        `/api/gmail/forms/${encodeURIComponent(formId)}/response`,
+        {
+          method: 'GET',
+          credentials: 'same-origin',
+        },
+      )
+
+      if (!response.ok) {
+        throw await readAnswerConfirmationError(response)
+      }
+
+      const responseBody = (await response.json()) as {
+        formId?: unknown
+        status?: unknown
+      }
+
+      const rawStatus = responseBody.status
+      if (
+        typeof rawStatus !== 'string' ||
+        (rawStatus !== 'submitted' &&
+          rawStatus !== 'unreviewable' &&
+          rawStatus !== 'needsReview' &&
+          rawStatus !== 'answered' &&
+          rawStatus !== 'needs_review' &&
+          rawStatus !== 'pending')
+      ) {
+        throw createAnswerConfirmationError('invalid_backend_response')
+      }
+
+      return {
+        formUrl,
+        status: rawStatus as FormConfirmationStatus,
+      }
     }),
-  })
-
-  if (!response.ok) {
-    throw await readAnswerConfirmationError(response)
-  }
-
-  const responseBody = (await response.json()) as {
-    taskId?: unknown
-    results?: unknown
-  }
-
-  if (typeof responseBody.taskId !== 'string') {
-    throw createAnswerConfirmationError('invalid_backend_response')
-  }
-
-  const results = Array.isArray(responseBody.results)
-    ? responseBody.results.map((result, index) => {
-        const item = result as { formUrl?: unknown; status?: unknown }
-        if (typeof item.formUrl !== 'string') {
-          throw createAnswerConfirmationError('invalid_backend_response')
-        }
-
-        if (
-          item.status !== 'answered' &&
-          item.status !== 'pending' &&
-          item.status !== 'needs_review' &&
-          item.status !== 'unreviewable'
-        ) {
-          throw createAnswerConfirmationError('invalid_backend_response')
-        }
-
-        return {
-          formUrl: item.formUrl,
-          status: item.status,
-        } satisfies FormConfirmationResult
-      })
-    : []
+  )
 
   return {
-    taskId: responseBody.taskId,
-    formResults: results,
-    status: aggregateAnswerConfirmationResults(results),
+    taskId: input.taskId,
+    formResults,
+    status: aggregateAnswerConfirmationResults(formResults),
   }
 }
 
@@ -180,13 +191,14 @@ export const mockAnswerConfirmationApi = {
     const formResults: FormConfirmationResult[] = input.formUrls.map(
       (formUrl) => {
         const seed = formUrl.split('/').at(-1) ?? formUrl
-        const status: FormConfirmationStatus = seed.includes('answered')
-          ? 'answered'
-          : seed.includes('needs')
-            ? 'needs_review'
-            : seed.includes('unreviewable')
-              ? 'unreviewable'
-              : 'pending'
+        const status: FormConfirmationStatus =
+          seed.includes('answered') || seed.includes('submitted')
+            ? 'submitted'
+            : seed.includes('needs')
+              ? 'needsReview'
+              : seed.includes('unreviewable')
+                ? 'unreviewable'
+                : 'unreviewable'
 
         return { formUrl, status }
       },

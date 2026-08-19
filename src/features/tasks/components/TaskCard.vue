@@ -91,7 +91,7 @@ const handleConfirmClick = (event: MouseEvent) => {
         </div>
 
         <div
-          class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
         >
           <div class="flex flex-1 min-w-0 gap-3">
             <div
@@ -111,39 +111,46 @@ const handleConfirmClick = (event: MouseEvent) => {
             </div>
           </div>
 
-          <div class="flex flex-col gap-2 items-start sm:items-end">
+          <div class="flex flex-col items-start sm:items-end gap-2 shrink-0">
+            <!-- 1段目: 状態テキスト -->
             <AnswerStatusBadge :status="answerStatus" />
-            <div class="flex items-center justify-between w-full sm:w-auto">
-              <div />
-              <p class="text-sm font-semibold text-accent">
-                {{ props.task.warning }}
+
+            <!-- 2段目: 期限テキスト -->
+            <p
+              v-if="props.task.warning"
+              class="text-xs sm:text-sm font-semibold text-accent"
+            >
+              {{ props.task.warning }}
+            </p>
+
+            <!-- 3段目: 「回答を確認」ボタン -->
+            <div
+              v-if="hasForm"
+              class="mt-0.5 flex flex-col items-start sm:items-end gap-1"
+            >
+              <button
+                data-test="confirm-answer"
+                type="button"
+                class="confirm-answer-btn inline-flex w-auto items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold leading-none whitespace-nowrap text-blue-600 transition-colors duration-150 hover:bg-blue-100 hover:text-blue-700 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="isConfirmDisabled"
+                :class="{
+                  'is-confirming': props.isConfirming,
+                  'is-error':
+                    props.confirmationError &&
+                    props.confirmationError.retryable,
+                }"
+                @click="handleConfirmClick"
+              >
+                {{ confirmButtonLabel }}
+              </button>
+              <p
+                v-if="confirmationMessage"
+                class="text-xs leading-relaxed text-[color:var(--color-danger)] text-left sm:text-right"
+              >
+                {{ confirmationMessage }}
               </p>
             </div>
           </div>
-        </div>
-
-        <div v-if="hasForm" class="mt-3 flex flex-col items-start gap-1.5">
-          <button
-            v-if="hasForm"
-            data-test="confirm-answer"
-            type="button"
-            class="confirm-answer-btn inline-flex w-auto items-center justify-center self-start rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold leading-none whitespace-nowrap text-blue-600 transition-colors duration-150 hover:bg-blue-100 hover:text-blue-700 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
-            :disabled="isConfirmDisabled"
-            :class="{
-              'is-confirming': props.isConfirming,
-              'is-error':
-                props.confirmationError && props.confirmationError.retryable,
-            }"
-            @click="handleConfirmClick"
-          >
-            {{ confirmButtonLabel }}
-          </button>
-          <p
-            v-if="confirmationMessage"
-            class="text-xs leading-relaxed text-[color:var(--color-danger)]"
-          >
-            {{ confirmationMessage }}
-          </p>
         </div>
       </div>
     </div>

@@ -18,46 +18,23 @@ const label = computed(() => {
   return labels[props.status]
 })
 
-const statusStyle = computed(() => {
-  const themes: Record<
-    AnswerStatus,
-    { backgroundColor: string; color: string; borderColor: string }
-  > = {
-    unreviewed: {
-      backgroundColor: 'var(--color-warning-soft)',
-      color: 'var(--color-warning)',
-      borderColor: 'var(--color-warning)',
-    },
-    reviewing: {
-      backgroundColor: 'var(--color-info-soft)',
-      color: 'var(--color-info)',
-      borderColor: 'var(--color-info)',
-    },
-    submitted: {
-      backgroundColor: 'var(--color-success-soft)',
-      color: 'var(--color-success)',
-      borderColor: 'var(--color-success)',
-    },
-    unreviewable: {
-      backgroundColor: 'var(--color-danger-soft)',
-      color: 'var(--color-text-primary)',
-      borderColor: 'var(--color-danger)',
-    },
-    needsReview: {
-      backgroundColor: 'var(--color-orange-soft)',
-      color: 'var(--color-warning)',
-      borderColor: 'var(--color-orange)',
-    },
+const textColor = computed(() => {
+  const colors: Record<AnswerStatus, string> = {
+    unreviewed: 'var(--color-warning)',
+    reviewing: 'var(--color-info)',
+    submitted: 'var(--color-success)',
+    unreviewable: 'var(--color-text-secondary)',
+    needsReview: 'var(--color-warning)',
   }
 
-  return themes[props.status]
+  return colors[props.status]
 })
 </script>
 
 <template>
   <span
-    class="answer-status-badge inline-flex max-w-full items-center rounded-full border px-3 py-1.5 text-xs font-semibold leading-none whitespace-nowrap"
-    :style="statusStyle"
+    class="answer-status-badge text-xs sm:text-sm font-semibold leading-none whitespace-nowrap"
+    :style="{ color: textColor }"
   >
     {{ label }}
   </span>
