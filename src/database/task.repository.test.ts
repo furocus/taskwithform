@@ -272,10 +272,72 @@ describe('TaskRepository', () => {
     expect(tasks.map((task) => task.courseWorkId)).toEqual(['inside'])
   })
 
+  //同日期限の課題を科目名順に固定
+  it('sorts tasks with the same due date by title', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-26',
+      tasks: [
+        createTaskInput({
+          courseWorkId: 'task-z',
+          title: '数学',
+          dueDate: '2026-07-27',
+        }),
+        createTaskInput({
+          courseWorkId: 'task-a',
+          title: '英語',
+          dueDate: '2026-07-27',
+        }),
+        createTaskInput({
+          courseWorkId: 'task-m',
+          title: '国語',
+          dueDate: '2026-07-27',
+        }),
+      ],
+    })
+
+    const tasks = await repository.getUnsubmittedTasksInDateRange(
+      '2026-07-27',
+      '2026-07-27',
+    )
+
+    expect(tasks.map((task) => task.title)).toEqual(['英語', '国語', '数学'])
+  })
+
+  //終了日が開始日より前
   it('rejects a calendar range whose start date is after its end date', async () => {
     await expect(
       repository.getUnsubmittedTasksInDateRange('2026-07-31', '2026-07-26'),
     ).rejects.toThrow('startDate must not be after endDate')
+  })
+
+  //型式不一致
+  it('rejects a start date that is not in YYYY-MM-DD format', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-2-01', '2026-02-28'),
+    ).rejects.toThrow('startDate must be in YYYY-MM-DD format.')
+  })
+  it('rejects an end date that is not in YYYY-MM-DD format', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-02-01', '2026-2-28'),
+    ).rejects.toThrow('endDate must be in YYYY-MM-DD format.')
+  })
+
+  //存在しない日付が入力された
+  it('rejects a non-existent date', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-02-29', '2026-03-01'),
+    ).rejects.toThrow('startDate must be a valid date.')
+  })
+  it('rejects a non-existent day in a month', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-04-31', '2026-05-01'),
+    ).rejects.toThrow('startDate must be a valid date.')
+  })
+  it('rejects a non-existent month', async () => {
+    await expect(
+      repository.getUnsubmittedTasksInDateRange('2026-13-01', '2026-12-31'),
+    ).rejects.toThrow('startDate must be a valid date.')
   })
 
   it('rolls back a duplicate snapshot and strips unexpected personal fields', async () => {
@@ -319,5 +381,226 @@ describe('TaskRepository', () => {
 
     expect(await repository.getAllTasks()).toEqual([])
     expect(await repository.getSyncStates()).toEqual([])
+  })
+  it('groups unsubmitted tasks by due date', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-26',
+      tasks: [
+        createTaskInput({
+          courseWorkId: 'task-1',
+          title: '数学',
+          dueDate: '2026-07-27',
+        }),
+        createTaskInput({
+          courseWorkId: 'task-2',
+          title: '英語',
+          dueDate: '2026-07-27',
+        }),
+        createTaskInput({
+          courseWorkId: 'task-3',
+          title: '国語',
+          dueDate: '2026-07-28',
+        }),
+        createTaskInput({
+          courseWorkId: 'task-4',
+          title: '期限なし',
+        }),
+        createTaskInput({
+          courseWorkId: 'task-5',
+          title: '提出済み',
+          dueDate: '2026-07-27',
+          status: 'submitted',
+        }),
+      ],
+    })
+
+    const tasks = await repository.getTasksGroupedByDueDate(
+      '2026-07-27',
+      '2026-07-28',
+    )
+
+    expect(tasks['2026-07-27']).toHaveLength(2)
+    expect(tasks['2026-07-28']).toHaveLength(1)
+
+    expect(tasks['2026-07-27']).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          courseWorkId: 'task-1',
+        }),
+        expect.objectContaining({
+          courseWorkId: 'task-2',
+        }),
+      ]),
+    )
+
+    expect(tasks['2026-07-28']).toEqual([
+      expect.objectContaining({
+        courseWorkId: 'task-3',
+      }),
+    ])
+  })
+
+  //月境界テスト
+  it('groups tasks correctly across a month boundary', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-31',
+      tasks: [
+        createTaskInput({
+          courseWorkId: 'july-last',
+          title: '7月末',
+          dueDate: '2026-07-31',
+        }),
+        createTaskInput({
+          courseWorkId: 'august-first',
+          title: '8月初日',
+          dueDate: '2026-08-01',
+        }),
+      ],
+    })
+
+    const tasks = await repository.getTasksGroupedByDueDate(
+      '2026-07-31',
+      '2026-08-01',
+    )
+
+    expect(Object.keys(tasks)).toEqual(['2026-07-31', '2026-08-01'])
+
+    expect(tasks['2026-07-31']).toHaveLength(1)
+    expect(tasks['2026-08-01']).toHaveLength(1)
+  })
+
+  //年境界テスト
+  it('groups tasks correctly across a year boundary', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-12-30',
+      tasks: [
+        createTaskInput({
+          courseWorkId: 'task-1',
+          title: '年末の課題',
+          dueDate: '2026-12-31',
+        }),
+        createTaskInput({
+          courseWorkId: 'task-2',
+          title: '年始の課題',
+          dueDate: '2027-01-01',
+        }),
+      ],
+    })
+
+    const tasks = await repository.getTasksGroupedByDueDate(
+      '2026-12-31',
+      '2027-01-01',
+    )
+
+    expect(tasks).toEqual({
+      '2026-12-31': [
+        expect.objectContaining({
+          courseWorkId: 'task-1',
+        }),
+      ],
+      '2027-01-01': [
+        expect.objectContaining({
+          courseWorkId: 'task-2',
+        }),
+      ],
+    })
+  })
+
+  //うるう年テスト
+  it('groups tasks correctly across a leap day', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2028-02-27',
+      tasks: [
+        createTaskInput({
+          courseWorkId: 'feb-28',
+          title: '2月28日の課題',
+          dueDate: '2028-02-28',
+        }),
+        createTaskInput({
+          courseWorkId: 'feb-29',
+          title: 'うるう日の課題',
+          dueDate: '2028-02-29',
+        }),
+        createTaskInput({
+          courseWorkId: 'mar-01',
+          title: '3月1日の課題',
+          dueDate: '2028-03-01',
+        }),
+      ],
+    })
+
+    const tasks = await repository.getTasksGroupedByDueDate(
+      '2028-02-28',
+      '2028-03-01',
+    )
+
+    expect(tasks['2028-02-28']).toEqual([
+      expect.objectContaining({
+        courseWorkId: 'feb-28',
+      }),
+    ])
+
+    expect(tasks['2028-02-29']).toEqual([
+      expect.objectContaining({
+        courseWorkId: 'feb-29',
+      }),
+    ])
+
+    expect(tasks['2028-03-01']).toEqual([
+      expect.objectContaining({
+        courseWorkId: 'mar-01',
+      }),
+    ])
+  })
+
+  // 同一期限日かつ同一タイトルの課題も安定した順序で取得する
+  it('sorts tasks with the same due date and title by course name', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-a',
+      fetchedDate: '2026-08-19',
+      tasks: [
+        createTaskInput({
+          courseId: 'course-a',
+          courseName: '数学',
+          courseWorkId: 'work-a',
+          title: '課題',
+          dueDate: '2026-08-20',
+        }),
+      ],
+    })
+
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-b',
+      fetchedDate: '2026-08-19',
+      tasks: [
+        createTaskInput({
+          courseId: 'course-b',
+          courseName: '英語',
+          courseWorkId: 'work-b',
+          title: '課題',
+          dueDate: '2026-08-20',
+        }),
+      ],
+    })
+
+    const result = await repository.getTasksGroupedByDueDate(
+      '2026-08-20',
+      '2026-08-20',
+    )
+
+    expect(result['2026-08-20']).toEqual([
+      expect.objectContaining({
+        courseName: '英語',
+        title: '課題',
+      }),
+      expect.objectContaining({
+        courseName: '数学',
+        title: '課題',
+      }),
+    ])
   })
 })

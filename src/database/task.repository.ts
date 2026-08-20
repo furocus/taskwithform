@@ -51,9 +51,46 @@ function toTaskRecord(
   return record
 }
 
+//日付形式(YYYY-MM-DD)チェック
+function validateDateString(value: string, name: string): void {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`${name} must be in YYYY-MM-DD format.`)
+  }
+
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    throw new Error(`${name} must be a valid date.`)
+  }
+}
+
+function compareTaskDetails(a: TaskRecord, b: TaskRecord): number {
+  const titleOrder = a.title.localeCompare(b.title, 'ja')
+  if (titleOrder !== 0) {
+    return titleOrder
+  }
+
+  const courseNameOrder = a.courseName.localeCompare(b.courseName, 'ja')
+  if (courseNameOrder !== 0) {
+    return courseNameOrder
+  }
+
+  const courseWorkIdOrder = a.courseWorkId.localeCompare(b.courseWorkId)
+  if (courseWorkIdOrder !== 0) {
+    return courseWorkIdOrder
+  }
+
+  return a.externalKey.localeCompare(b.externalKey)
+}
+
 function compareTasksByDueDate(a: TaskRecord, b: TaskRecord): number {
   if (a.dueDate === undefined && b.dueDate === undefined) {
-    return a.title.localeCompare(b.title, 'ja')
+    return compareTaskTieBreaker(a, b)
   }
 
   if (a.dueDate === undefined) {
@@ -65,7 +102,34 @@ function compareTasksByDueDate(a: TaskRecord, b: TaskRecord): number {
   }
 
   const dateOrder = a.dueDate.localeCompare(b.dueDate)
-  return dateOrder === 0 ? a.title.localeCompare(b.title, 'ja') : dateOrder
+
+  if (dateOrder !== 0) {
+    return dateOrder
+  }
+
+  return compareTaskTieBreaker(a, b)
+}
+
+function compareTaskTieBreaker(a: TaskRecord, b: TaskRecord): number {
+  const titleComparison = a.title.localeCompare(b.title, 'ja')
+
+  if (titleComparison !== 0) {
+    return titleComparison
+  }
+
+  const courseNameComparison = a.courseName.localeCompare(b.courseName, 'ja')
+
+  if (courseNameComparison !== 0) {
+    return courseNameComparison
+  }
+
+  const courseWorkIdComparison = a.courseWorkId.localeCompare(b.courseWorkId)
+
+  if (courseWorkIdComparison !== 0) {
+    return courseWorkIdComparison
+  }
+
+  return a.externalKey.localeCompare(b.externalKey)
 }
 
 export class TaskRepository {
@@ -180,15 +244,38 @@ export class TaskRepository {
     startDate: string,
     endDate: string,
   ): Promise<TaskRecord[]> {
+    validateDateString(startDate, 'startDate')
+    validateDateString(endDate, 'endDate')
     if (startDate > endDate) {
       throw new Error('startDate must not be after endDate.')
     }
 
-    return this.database.tasks
+    const tasks = await this.database.tasks
       .where('dueDate')
       .between(startDate, endDate, true, true)
       .filter((task) => task.status === 'unsubmitted')
-      .sortBy('dueDate')
+      .toArray()
+
+    return tasks.sort(compareTasksByDueDate)
+  }
+
+  async getTasksGroupedByDueDate(
+    startDate: string,
+    endDate: string,
+  ): Promise<Record<string, TaskRecord[]>> {
+    const tasks = await this.getUnsubmittedTasksInDateRange(startDate, endDate)
+
+    return tasks.reduce<Record<string, TaskRecord[]>>((grouped, task) => {
+      if (task.dueDate === undefined) {
+        return grouped
+      }
+
+      const tasksForDate = grouped[task.dueDate] ?? []
+      tasksForDate.push(task)
+      grouped[task.dueDate] = tasksForDate
+
+      return grouped
+    }, {})
   }
 
   async getSyncStates(): Promise<SyncState[]> {
