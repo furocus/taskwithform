@@ -61,6 +61,17 @@ describe('mock frontend preview API', () => {
       authenticated: true,
     })
     expect(JSON.parse(count.response.body ?? '')).toEqual({ count: 3 })
+
+    const formResponse = request(
+      handler,
+      'GET',
+      '/api/gmail/forms/sample-form/response',
+    )
+    expect(formResponse.response.statusCode).toBe(200)
+    expect(JSON.parse(formResponse.response.body ?? '')).toEqual({
+      formId: 'sample-form',
+      status: 'submitted',
+    })
   })
 
   it('returns no content for logout and does not fall through unknown API paths', () => {

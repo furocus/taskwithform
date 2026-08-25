@@ -4,6 +4,11 @@ import type { Task } from '../task.types'
 import { getCourseColors } from '../task.utils'
 import TaskCard from './TaskCard.vue'
 
+type TaskConfirmationError = {
+  code: string
+  retryable?: boolean
+}
+
 const props = withDefaults(
   defineProps<{
     status?: 'loading' | 'empty' | 'error' | 'ready'
@@ -11,12 +16,18 @@ const props = withDefaults(
     courseId?: string
     onRetry?: () => void
     onTaskClick?: (taskId: string) => void
+    onConfirmAnswer?: (taskId: number) => void
+    confirmingTaskId?: number | null
+    confirmationErrors?: Record<number, TaskConfirmationError | null>
   }>(),
   {
     status: 'ready',
     tasks: () => [],
     courseId: 'default',
     onRetry: undefined,
+    onConfirmAnswer: undefined,
+    confirmingTaskId: null,
+    confirmationErrors: () => ({}),
   },
 )
 
@@ -80,6 +91,9 @@ const courseColors = computed(() => getCourseColors(props.courseId))
             :key="task.id"
             :task="{ ...task, courseId: task.courseId ?? props.courseId }"
             :on-task-click="props.onTaskClick"
+            :on-confirm-answer="props.onConfirmAnswer"
+            :is-confirming="props.confirmingTaskId === task.id"
+            :confirmation-error="props.confirmationErrors?.[task.id] ?? null"
           />
         </div>
       </div>
