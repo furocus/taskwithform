@@ -9,6 +9,7 @@ import {
   createGoogleOAuthService,
   GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
   GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
   GOOGLE_GMAIL_READONLY_SCOPE,
 } from './auth/google-oauth.mjs'
 import { MemorySessionStore } from './auth/session-store.mjs'
@@ -109,6 +110,15 @@ function hasRequiredScopes(session, requiredScopes) {
 
   const grantedScopes = new Set(session.grantedScopes)
   return requiredScopes.every((scope) => grantedScopes.has(scope))
+}
+
+function hasAnyRequiredScope(session, scopes) {
+  if (!Array.isArray(session.grantedScopes)) {
+    return false
+  }
+
+  const grantedScopes = new Set(session.grantedScopes)
+  return scopes.some((scope) => grantedScopes.has(scope))
 }
 
 function sendScopeForbidden(response, code, message) {
@@ -392,8 +402,8 @@ export function createRequestHandler({
         ) {
           sendScopeForbidden(
             response,
-            'classroom_forbidden',
-            'Google Classroom access was denied.',
+            'classroom_scope_missing',
+            'Required Google Classroom scopes are missing.',
           )
           return
         }
@@ -473,13 +483,16 @@ export function createRequestHandler({
         if (
           !hasRequiredScopes(session, [
             GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+          ]) ||
+          !hasAnyRequiredScope(session, [
             GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
+            GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
           ])
         ) {
           sendScopeForbidden(
             response,
-            'classroom_forbidden',
-            'Google Classroom access was denied.',
+            'classroom_scope_missing',
+            'Required Google Classroom scopes are missing.',
           )
           return
         }

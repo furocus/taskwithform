@@ -4,6 +4,7 @@ import { createRequestHandler } from './app.mjs'
 import {
   GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
   GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
   GOOGLE_GMAIL_READONLY_SCOPE,
   GOOGLE_OAUTH_SCOPES,
 } from './auth/google-oauth.mjs'
@@ -386,7 +387,7 @@ describe('backend authentication routes', () => {
 
     expect(response.status).toBe(403)
     expect(response.json()).toMatchObject({
-      error: { code: 'classroom_forbidden' },
+      error: { code: 'classroom_scope_missing' },
     })
     expect(classroomService.countActiveCourses).not.toHaveBeenCalled()
     expect(
@@ -399,7 +400,7 @@ describe('backend authentication routes', () => {
     ).toMatchObject({ authenticated: true })
   })
 
-  it('requires both Classroom scopes before listing course work', async () => {
+  it('requires Classroom scopes before listing course work', async () => {
     oauthService.exchangeCode.mockResolvedValueOnce({
       accessToken: 'access-token',
       expiresAt: NOW + 60 * 60 * 1000,
@@ -414,7 +415,7 @@ describe('backend authentication routes', () => {
 
     expect(response.status).toBe(403)
     expect(response.json()).toMatchObject({
-      error: { code: 'classroom_forbidden' },
+      error: { code: 'classroom_scope_missing' },
     })
     expect(classroomService.listCourseWorkWithForms).not.toHaveBeenCalled()
   })
@@ -480,6 +481,28 @@ describe('backend authentication routes', () => {
 
     expect(response.status).toBe(200)
     expect(response.json()).toEqual({ courseWork })
+    expect(classroomService.listCourseWorkWithForms).toHaveBeenCalledWith(
+      'access-token',
+    )
+  })
+
+  it('accepts the canonical student-submissions scope for course work', async () => {
+    oauthService.exchangeCode.mockResolvedValueOnce({
+      accessToken: 'access-token',
+      expiresAt: NOW + 60 * 60 * 1000,
+      grantedScopes: [
+        GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+        GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
+      ],
+    })
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/coursework/forms',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
     expect(classroomService.listCourseWorkWithForms).toHaveBeenCalledWith(
       'access-token',
     )
