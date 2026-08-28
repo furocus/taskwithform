@@ -2,12 +2,25 @@ import { OAuth2Client } from 'google-auth-library'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
+  GOOGLE_GMAIL_READONLY_SCOPE,
   GOOGLE_OAUTH_SCOPES,
   createGoogleOAuthService,
 } from './google-oauth.mjs'
 
 describe('Google OAuth service', () => {
   it('creates an online authorization URL with readonly Classroom and Gmail scopes', () => {
+    expect(GOOGLE_OAUTH_SCOPES).toEqual([
+      GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+      GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
+      GOOGLE_GMAIL_READONLY_SCOPE,
+    ])
+    expect(GOOGLE_OAUTH_SCOPES).not.toContain(
+      GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
+    )
+
     const service = createGoogleOAuthService({
       clientId: 'client-id',
       clientSecret: 'client-secret',
