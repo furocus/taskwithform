@@ -32,9 +32,17 @@ status: completed
 
 ## バックエンドAPI
 
-### `GET /api/classroom/coursework/forms`
+### `GET /api/classroom/courses/coursework`
 
-ACTIVEな各コースのPUBLISHEDな課題をページングして取得する。レスポンスにはコースID・コース名・課題ID・課題種別・タイトル・任意の説明、リンク、期限と、添付FormのID・URL・URL形式の種別（`standard`または`published`）を含める。
+ACTIVEな各コースのPUBLISHEDな課題をページングして取得し、**コース単位**で返す。
+
+```json
+{ "courses": [{ "id": "...", "name": "...", "courseWork": [] }] }
+```
+
+各コースにはコースID・コース名と、その課題の配列を含める。課題には課題ID・課題種別・タイトル・任意の説明、リンク、期限と、添付FormのID・URL・URL形式の種別（`standard`または`published`）を含める。
+
+課題が0件のACTIVEコースも`courseWork`を空配列として返す。課題をフラットな配列で返すと課題0件のコースがレスポンスから消え、空コースの同期と非ACTIVEコースの削除をクライアントが判定できないため（Issue #27）。
 
 Form IDはGoogle Classroom APIが返す`docs.google.com/forms/d/{id}`または`docs.google.com/forms/d/e/{id}`形式から抽出する。`formId`はForms APIのcanonical resource IDを保証する値ではなく、Form URL中のopaque identifierである。認識できないURLを推測して返さず、上流レスポンス異常として扱う。
 

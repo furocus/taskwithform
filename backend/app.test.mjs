@@ -38,7 +38,7 @@ function createFakeOAuthService(overrides = {}) {
 function createFakeClassroomService(overrides = {}) {
   return {
     countActiveCourses: vi.fn(async () => 3),
-    listCourseWorkWithForms: vi.fn(async () => []),
+    listActiveCoursesWithCourseWork: vi.fn(async () => []),
     ...overrides,
   }
 }
@@ -409,7 +409,7 @@ describe('backend authentication routes', () => {
     const { sessionCookie } = await completeAuthentication()
 
     const response = await sendRequest(handler, {
-      url: '/api/classroom/coursework/forms',
+      url: '/api/classroom/courses/coursework',
       headers: { cookie: sessionCookie },
     })
 
@@ -417,7 +417,9 @@ describe('backend authentication routes', () => {
     expect(response.json()).toMatchObject({
       error: { code: 'classroom_scope_missing' },
     })
-    expect(classroomService.listCourseWorkWithForms).not.toHaveBeenCalled()
+    expect(
+      classroomService.listActiveCoursesWithCourseWork,
+    ).not.toHaveBeenCalled()
   })
 
   it('maps Classroom network and server failures to a safe gateway error', async () => {
@@ -478,36 +480,47 @@ describe('backend authentication routes', () => {
     )
   })
 
-  it('returns Classroom course work and Form IDs to an authenticated user', async () => {
-    const courseWork = [
+  it('returns active courses with their course work and Form IDs to an authenticated user', async () => {
+    const courses = [
       {
-        courseId: 'course-1',
-        courseName: '数学',
-        courseWorkId: 'work-1',
-        courseWorkType: 'ASSIGNMENT',
-        title: '確認テスト',
-        forms: [
+        id: 'course-1',
+        name: '数学',
+        courseWork: [
           {
-            formId: 'form-id',
-            formIdType: 'standard',
-            formUrl: 'https://docs.google.com/forms/d/form-id/viewform',
+            courseWorkId: 'work-1',
+            courseWorkType: 'ASSIGNMENT',
+            title: '確認テスト',
+            forms: [
+              {
+                formId: 'form-id',
+                formIdType: 'standard',
+                formUrl: 'https://docs.google.com/forms/d/form-id/viewform',
+              },
+            ],
           },
         ],
       },
+      {
+        id: 'course-2',
+        name: '英語',
+        courseWork: [],
+      },
     ]
-    classroomService.listCourseWorkWithForms.mockResolvedValueOnce(courseWork)
+    classroomService.listActiveCoursesWithCourseWork.mockResolvedValueOnce(
+      courses,
+    )
     const { sessionCookie } = await completeAuthentication()
 
     const response = await sendRequest(handler, {
-      url: '/api/classroom/coursework/forms',
+      url: '/api/classroom/courses/coursework',
       headers: { cookie: sessionCookie },
     })
 
     expect(response.status).toBe(200)
-    expect(response.json()).toEqual({ courseWork })
-    expect(classroomService.listCourseWorkWithForms).toHaveBeenCalledWith(
-      'access-token',
-    )
+    expect(response.json()).toEqual({ courses })
+    expect(
+      classroomService.listActiveCoursesWithCourseWork,
+    ).toHaveBeenCalledWith('access-token')
   })
 
   it('accepts the canonical student-submissions scope for course work', async () => {
@@ -522,36 +535,38 @@ describe('backend authentication routes', () => {
     const { sessionCookie } = await completeAuthentication()
 
     const response = await sendRequest(handler, {
-      url: '/api/classroom/coursework/forms',
+      url: '/api/classroom/courses/coursework',
       headers: { cookie: sessionCookie },
     })
 
     expect(response.status).toBe(200)
-    expect(classroomService.listCourseWorkWithForms).toHaveBeenCalledWith(
-      'access-token',
-    )
+    expect(
+      classroomService.listActiveCoursesWithCourseWork,
+    ).toHaveBeenCalledWith('access-token')
   })
 
   it('requires authentication before listing Classroom course work', async () => {
     const response = await sendRequest(handler, {
-      url: '/api/classroom/coursework/forms',
+      url: '/api/classroom/courses/coursework',
     })
 
     expect(response.status).toBe(401)
     expect(response.json()).toMatchObject({
       error: { code: 'unauthenticated' },
     })
-    expect(classroomService.listCourseWorkWithForms).not.toHaveBeenCalled()
+    expect(
+      classroomService.listActiveCoursesWithCourseWork,
+    ).not.toHaveBeenCalled()
   })
 
   it('maps a Classroom course work permission error safely', async () => {
-    classroomService.listCourseWorkWithForms.mockRejectedValueOnce(
+    classroomService.listActiveCoursesWithCourseWork.mockRejectedValueOnce(
       new ClassroomRequestError('upstream_error', { status: 403 }),
     )
     const { sessionCookie } = await completeAuthentication()
 
     const response = await sendRequest(handler, {
-      url: '/api/classroom/coursework/forms',
+      url: '/api/classroom/courses/coursework',
       headers: { cookie: sessionCookie },
     })
 
