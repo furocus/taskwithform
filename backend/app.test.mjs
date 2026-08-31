@@ -454,6 +454,30 @@ describe('backend authentication routes', () => {
     })
   })
 
+  it('returns a generic error when an unexpected service failure occurs', async () => {
+    classroomService.countActiveCourses.mockRejectedValueOnce(
+      new Error('sensitive classroom response'),
+    )
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/courses/count',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(500)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'internal_error',
+        message: 'An unexpected error occurred.',
+      },
+    })
+    expect(response.body).not.toContain('sensitive classroom response')
+    expect(logger.error).toHaveBeenCalledWith(
+      'Unhandled backend request error.',
+    )
+  })
+
   it('returns Classroom course work and Form IDs to an authenticated user', async () => {
     const courseWork = [
       {
