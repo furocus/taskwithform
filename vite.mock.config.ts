@@ -102,6 +102,11 @@ export function createMockApiPlugin(): Plugin {
 }
 
 export default defineConfig({
+  // 通常の dev サーバー (vite.config.ts) と同時起動できるように、
+  // 依存事前バンドルのキャッシュを専用ディレクトリに分離する。
+  // 共有すると片方の起動時にもう片方のキャッシュが無効化され、
+  // /node_modules/.vite/deps/*.js が 504 になって画面が真っ白になる。
+  cacheDir: 'node_modules/.vite-mock',
   plugins: [vue(), tailwindcss(), createMockApiPlugin()],
   server: {
     host: 'localhost',

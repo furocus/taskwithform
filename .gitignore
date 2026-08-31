@@ -5,6 +5,7 @@ node_modules/
 dist/
 coverage/
 .vite/
+.vite-mock/
 *.tsbuildinfo
 
 # Logs and diagnostic reports
