@@ -1,819 +1,573 @@
 import { randomBytes } from 'node:crypto'
 
 import {
-  OAuthConfigurationError,
-  loadGoogleOAuthConfig,
-  loadServerConfig,
-} from './config.mjs'
-import {
   createGoogleOAuthService,
   GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
   GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
-  GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
   GOOGLE_GMAIL_READONLY_SCOPE,
 } from './auth/google-oauth.mjs'
 import { MemorySessionStore } from './auth/session-store.mjs'
+import {
+  loadGoogleOAuthConfig,
+  loadServerConfig,
+  OAuthConfigurationError,
+} from './config.mjs'
 import {
   ClassroomRequestError,
   createGoogleClassroomService,
 } from './classroom/google-classroom.mjs'
 import {
-  GmailRequestError,
   createGoogleGmailService,
+  GmailRequestError,
 } from './gmail/google-gmail.mjs'
 import { isValidGoogleFormId } from './google-form-id.mjs'
 
 const SESSION_COOKIE_NAME = 'taskwithform.sid'
-const PENDING_SESSION_MAX_AGE_SECONDS = 10 * 60
-const PRIVATE_NO_STORE_CACHE_CONTROL = 'private, no-store'
+const SESSION_COOKIE_PATH = '/'
 
-function createState() {
-  return randomBytes(32).toString('base64url')
-}
-
-function safelyDecodeURIComponent(value) {
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    return value
-  }
-}
-
-function parseCookies(cookieHeader = '') {
-  return Object.fromEntries(
-    cookieHeader
-      .split(';')
-      .map((cookie) => cookie.trim())
-      .filter(Boolean)
-      .map((cookie) => {
-        const separatorIndex = cookie.indexOf('=')
-        if (separatorIndex === -1) {
-          return [cookie, '']
-        }
-
-        return [
-          cookie.slice(0, separatorIndex),
-          safelyDecodeURIComponent(cookie.slice(separatorIndex + 1)),
-        ]
-      }),
-  )
-}
-
-function serializeSessionCookie(
-  sessionId,
-  { maxAgeSeconds, secure = false } = {},
-) {
-  const attributes = [
-    `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}`,
-    'HttpOnly',
-    'SameSite=Lax',
-    'Path=/',
-  ]
-
-  if (maxAgeSeconds !== undefined) {
-    attributes.push(`Max-Age=${Math.max(0, Math.floor(maxAgeSeconds))}`)
+function parseCookieHeader(headerValue) {
+  if (typeof headerValue !== 'string' || headerValue.length === 0) {
+    return new Map()
   }
 
-  if (secure) {
-    attributes.push('Secure')
+  const cookies = new Map()
+  for (const cookie of headerValue.split(';')) {
+    const trimmed = cookie.trim()
+    if (trimmed.length === 0) {
+      continue
+    }
+
+    const separatorIndex = trimmed.indexOf('=')
+    const name =
+      separatorIndex === -1 ? trimmed : trimmed.slice(0, separatorIndex).trim()
+    const value =
+      separatorIndex === -1 ? '' : trimmed.slice(separatorIndex + 1).trim()
+    cookies.set(name, decodeURIComponent(value))
   }
 
-  return attributes.join('; ')
+  return cookies
 }
 
-function clearSessionCookie(secure) {
-  return serializeSessionCookie('', { maxAgeSeconds: 0, secure })
+function readSessionIdFromRequest(request) {
+  const headerValue =
+    Array.isArray(request.headers?.cookie) && request.headers.cookie.length > 0
+      ? request.headers.cookie.join('; ')
+      : request.headers?.cookie
+
+  return parseCookieHeader(headerValue).get(SESSION_COOKIE_NAME)
 }
 
-function sendJson(response, statusCode, body, headers = {}) {
+function buildSessionCookie(sessionId, { secure = false, clear = false } = {}) {
+  if (clear) {
+    return `${SESSION_COOKIE_NAME}=; Path=${SESSION_COOKIE_PATH}; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure ? '; Secure' : ''}`
+  }
+
+  return `${SESSION_COOKIE_NAME}=${sessionId}; Path=${SESSION_COOKIE_PATH}; HttpOnly; SameSite=Lax; Max-Age=600${secure ? '; Secure' : ''}`
+}
+
+function sendJson(response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
-    'Content-Type': 'application/json; charset=utf-8',
-    ...headers,
-    'Cache-Control': PRIVATE_NO_STORE_CACHE_CONTROL,
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'private, no-store',
+    ...extraHeaders,
   })
-  response.end(JSON.stringify(body))
+  response.end(JSON.stringify(payload))
 }
 
-function redirect(response, location, headers = {}) {
-  response.writeHead(302, {
-    Location: location,
-    ...headers,
-    'Cache-Control': PRIVATE_NO_STORE_CACHE_CONTROL,
-  })
+function sendRedirect(response, targetUrl, cookieHeader) {
+  const headers = { location: targetUrl }
+  if (cookieHeader !== undefined) {
+    headers['set-cookie'] = cookieHeader
+  }
+
+  response.writeHead(302, headers)
   response.end()
 }
 
-function hasRequiredScopes(session, requiredScopes) {
-  if (!Array.isArray(session.grantedScopes)) {
-    return false
+function ensureAuthenticated(request, sessionStore) {
+  const sessionId = readSessionIdFromRequest(request)
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    return {
+      ok: false,
+      status: 401,
+      payload: { error: { code: 'unauthenticated' } },
+    }
   }
 
-  const grantedScopes = new Set(session.grantedScopes)
-  return requiredScopes.every((scope) => grantedScopes.has(scope))
-}
-
-function hasAnyRequiredScope(session, scopes) {
-  if (!Array.isArray(session.grantedScopes)) {
-    return false
+  const session = sessionStore.getAuthenticated(sessionId)
+  if (session === undefined) {
+    return {
+      ok: false,
+      status: 401,
+      payload: { error: { code: 'unauthenticated' } },
+      sessionId,
+    }
   }
 
-  const grantedScopes = new Set(session.grantedScopes)
-  return scopes.some((scope) => grantedScopes.has(scope))
+  return { ok: true, session, sessionId }
 }
 
-function sendScopeForbidden(response, code, message) {
-  sendJson(response, 403, {
-    error: { code, message },
+function hasRequiredScope(session, requiredScope) {
+  return Array.isArray(session.grantedScopes)
+    ? session.grantedScopes.includes(requiredScope)
+    : false
+}
+
+function getSessionErrorResponse({ status, code, message, setCookieHeader }) {
+  return {
+    status,
+    payload: { error: { code, message } },
+    setCookieHeader,
+  }
+}
+
+function buildGoogleClassroomErrorResponse(error) {
+  if (error instanceof ClassroomRequestError && error.status === 401) {
+    return getSessionErrorResponse({
+      status: 401,
+      code: 'session_expired',
+      message: 'The Google session has expired.',
+      setCookieHeader: buildSessionCookie('', { clear: true }),
+    })
+  }
+
+  if (error instanceof ClassroomRequestError && error.status === 403) {
+    return getSessionErrorResponse({
+      status: 403,
+      code: 'classroom_forbidden',
+      message: 'Google Classroom access was denied.',
+    })
+  }
+
+  return getSessionErrorResponse({
+    status: 502,
+    code: 'classroom_unavailable',
+    message: 'Google Classroom is temporarily unavailable.',
   })
 }
 
-function normalizeGmailFormResponse(result) {
-  if (result?.status === 'submitted') {
-    if (
-      typeof result.receiptReceivedAt !== 'string' ||
-      Number.isNaN(new Date(result.receiptReceivedAt).getTime()) ||
-      new Date(result.receiptReceivedAt).toISOString() !==
-        result.receiptReceivedAt
-    ) {
-      throw new GmailRequestError('invalid_response')
-    }
-    return {
-      status: 'submitted',
-      receiptReceivedAt: result.receiptReceivedAt,
-    }
+function buildGmailErrorResponse(error) {
+  if (error instanceof GmailRequestError && error.status === 401) {
+    return getSessionErrorResponse({
+      status: 401,
+      code: 'session_expired',
+      message: 'The Google session has expired.',
+      setCookieHeader: buildSessionCookie('', { clear: true }),
+    })
   }
 
-  if (result?.status === 'unreviewable' || result?.status === 'needsReview') {
-    return { status: result.status }
+  if (
+    error instanceof GmailRequestError &&
+    error.code === 'permission_denied'
+  ) {
+    return getSessionErrorResponse({
+      status: 403,
+      code: 'gmail_forbidden',
+      message: 'Gmail access was denied.',
+    })
   }
 
-  throw new GmailRequestError('invalid_response')
+  if (
+    error instanceof GmailRequestError &&
+    (error.code === 'rate_limited' || error.status === 429)
+  ) {
+    return getSessionErrorResponse({
+      status: 503,
+      code: 'gmail_rate_limited',
+      message: 'Gmail is temporarily rate limited.',
+    })
+  }
+
+  return getSessionErrorResponse({
+    status: 502,
+    code: 'gmail_unavailable',
+    message: 'Gmail is temporarily unavailable.',
+  })
 }
 
-function createFrontendLocation(frontendOrigin, path, errorCode) {
-  const location = new URL(path, frontendOrigin)
-  if (errorCode !== undefined) {
-    location.searchParams.set('error', errorCode)
-  }
-  return location.toString()
-}
-
-// Return undefined for unrelated paths, null for a malformed endpoint path,
-// and a string (possibly empty) for the exact endpoint shape. A failed
-// percent-decode becomes an invalid Form ID rather than being silently
-// replaced with a different path value.
-function readGmailFormResponseId(requestUrl) {
-  const pathPrefix = '/api/gmail/forms/'
-  if (!requestUrl.pathname.startsWith(pathPrefix)) {
-    return undefined
-  }
-
-  const match = /^([^/]+)\/response$/.exec(
-    requestUrl.pathname.slice(pathPrefix.length),
-  )
-  if (match === null) {
-    return null
-  }
-
-  try {
-    return decodeURIComponent(match[1])
-  } catch {
-    return ''
+function clearSessionForExpiredRequest(request, sessionStore) {
+  const sessionId = readSessionIdFromRequest(request)
+  if (typeof sessionId === 'string' && sessionId.length > 0) {
+    sessionStore.delete(sessionId)
   }
 }
 
-export function createRequestHandler({
-  environment = process.env,
-  now = () => Date.now(),
-  stateFactory = createState,
-  sessionStore = new MemorySessionStore({ now }),
-  oauthServiceFactory = createGoogleOAuthService,
-  classroomServiceFactory = createGoogleClassroomService,
-  gmailServiceFactory = createGoogleGmailService,
-  logger = console,
-} = {}) {
+export function createRequestHandler(options = {}) {
+  const environment = options.environment ?? process.env
   const serverConfig = loadServerConfig(environment)
-  const secureCookie = environment.NODE_ENV === 'production'
-  let oauthService
-  let classroomService
-  let gmailService
-
-  function getOAuthService() {
-    oauthService ??= oauthServiceFactory(loadGoogleOAuthConfig(environment))
-    return oauthService
-  }
-
-  function getClassroomService() {
-    classroomService ??= classroomServiceFactory()
-    return classroomService
-  }
-
-  function getGmailService() {
-    gmailService ??= gmailServiceFactory()
-    return gmailService
-  }
-
-  function readSessionId(request) {
-    return parseCookies(request.headers.cookie)[SESSION_COOKIE_NAME]
-  }
+  const sessionStore =
+    options.sessionStore ??
+    new MemorySessionStore({ now: options.now ?? Date.now })
+  const stateFactory =
+    options.stateFactory ?? (() => randomBytes(32).toString('base64url'))
+  const logger = options.logger ?? console
+  const oauthServiceFactory =
+    options.oauthServiceFactory ??
+    (() => {
+      const config = loadGoogleOAuthConfig(environment)
+      return createGoogleOAuthService(config)
+    })
+  const classroomServiceFactory =
+    options.classroomServiceFactory ?? (() => createGoogleClassroomService())
+  const gmailServiceFactory =
+    options.gmailServiceFactory ?? (() => createGoogleGmailService())
 
   return async function handleRequest(request, response) {
-    try {
-      const requestUrl = new URL(request.url ?? '/', 'http://localhost')
+    const requestUrl = new URL(request.url ?? '/', 'http://localhost')
+    const method = (request.method ?? 'GET').toUpperCase()
+    const pathname = requestUrl.pathname
 
-      if (request.method === 'GET' && requestUrl.pathname === '/api/health') {
-        sendJson(response, 200, { status: 'ok' })
-        return
-      }
+    if (method === 'GET' && pathname === '/api/health') {
+      return sendJson(response, 200, { status: 'ok' })
+    }
 
-      if (
-        request.method === 'GET' &&
-        requestUrl.pathname === '/api/auth/google'
-      ) {
-        let authorizationUrl
-
-        try {
-          const service = getOAuthService()
-          const state = stateFactory()
-          const sessionId = sessionStore.createPending(state)
-          authorizationUrl = service.createAuthorizationUrl(state)
-          redirect(response, authorizationUrl, {
-            'Set-Cookie': serializeSessionCookie(sessionId, {
-              maxAgeSeconds: PENDING_SESSION_MAX_AGE_SECONDS,
-              secure: secureCookie,
-            }),
-          })
-        } catch (error) {
-          if (error instanceof OAuthConfigurationError) {
-            sendJson(response, 503, {
-              error: {
-                code: 'oauth_not_configured',
-                message: 'Google OAuth is not configured.',
-              },
-            })
-            return
-          }
-          throw error
-        }
-        return
-      }
-
-      if (
-        request.method === 'GET' &&
-        requestUrl.pathname === '/api/auth/google/callback'
-      ) {
-        const sessionId = readSessionId(request)
-        const state = requestUrl.searchParams.get('state')
-        const validState =
-          sessionId !== undefined &&
-          state !== null &&
-          sessionStore.consumePending(sessionId, state)
-
-        if (!validState) {
-          redirect(
-            response,
-            createFrontendLocation(
-              serverConfig.frontendOrigin,
-              '/login',
-              'invalid_state',
-            ),
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
-          return
-        }
-
-        if (requestUrl.searchParams.get('error') === 'access_denied') {
-          redirect(
-            response,
-            createFrontendLocation(
-              serverConfig.frontendOrigin,
-              '/login',
-              'access_denied',
-            ),
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
-          return
-        }
-
-        const code = requestUrl.searchParams.get('code')
-        if (code === null) {
-          redirect(
-            response,
-            createFrontendLocation(
-              serverConfig.frontendOrigin,
-              '/login',
-              'oauth_failed',
-            ),
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
-          return
-        }
-
-        try {
-          const credentials = await getOAuthService().exchangeCode(code)
-          if (
-            credentials.accessToken === undefined ||
-            credentials.expiresAt === undefined ||
-            credentials.expiresAt <= now()
-          ) {
-            throw new Error('Google returned invalid access credentials.')
-          }
-
-          const authenticatedSessionId =
-            sessionStore.createAuthenticated(credentials)
-          redirect(
-            response,
-            createFrontendLocation(serverConfig.frontendOrigin, '/'),
-            {
-              'Set-Cookie': serializeSessionCookie(authenticatedSessionId, {
-                maxAgeSeconds: (credentials.expiresAt - now()) / 1000,
-                secure: secureCookie,
-              }),
-            },
-          )
-        } catch {
-          redirect(
-            response,
-            createFrontendLocation(
-              serverConfig.frontendOrigin,
-              '/login',
-              'oauth_failed',
-            ),
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
-        }
-        return
-      }
-
-      if (
-        request.method === 'GET' &&
-        requestUrl.pathname === '/api/auth/session'
-      ) {
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
-
-        if (session === undefined) {
-          sendJson(
-            response,
-            200,
-            { authenticated: false },
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
-          return
-        }
-
-        sendJson(response, 200, {
-          authenticated: true,
-          expiresAt: new Date(session.expiresAt).toISOString(),
+    if (method === 'GET' && pathname === '/api/auth/google') {
+      try {
+        const sessionState = stateFactory()
+        const sessionId = sessionStore.createPending(sessionState)
+        const oauthService = oauthServiceFactory()
+        const authUrl = oauthService.createAuthorizationUrl(sessionState)
+        const secureCookie = environment.NODE_ENV === 'production'
+        const setCookie = buildSessionCookie(sessionId, {
+          secure: secureCookie,
         })
-        return
-      }
 
-      if (
-        request.method === 'GET' &&
-        requestUrl.pathname === '/api/classroom/courses/count'
-      ) {
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
-
-        if (session === undefined) {
-          sendJson(
-            response,
-            401,
-            {
-              error: {
-                code: 'unauthenticated',
-                message: 'Authentication is required.',
-              },
-            },
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
-          return
-        }
-
-        if (
-          !hasRequiredScopes(session, [GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE])
-        ) {
-          sendScopeForbidden(
-            response,
-            'classroom_scope_missing',
-            'Required Google Classroom scopes are missing.',
-          )
-          return
-        }
-
-        try {
-          const count = await getClassroomService().countActiveCourses(
-            session.accessToken,
-          )
-          sendJson(response, 200, { count })
-        } catch (error) {
-          if (error instanceof ClassroomRequestError && error.status === 401) {
-            sessionStore.delete(sessionId)
-            sendJson(
-              response,
-              401,
-              {
-                error: {
-                  code: 'session_expired',
-                  message: 'The Google session has expired.',
-                },
-              },
-              { 'Set-Cookie': clearSessionCookie(secureCookie) },
-            )
-            return
-          }
-
-          if (error instanceof ClassroomRequestError && error.status === 403) {
-            sendJson(response, 403, {
-              error: {
-                code: 'classroom_forbidden',
-                message: 'Google Classroom access was denied.',
-              },
-            })
-            return
-          }
-
-          if (error instanceof ClassroomRequestError) {
-            sendJson(response, 502, {
-              error: {
-                code: 'classroom_unavailable',
-                message: 'Google Classroom is temporarily unavailable.',
-              },
-            })
-            return
-          }
-
-          throw error
-        }
-        return
-      }
-
-      if (
-        request.method === 'GET' &&
-        requestUrl.pathname === '/api/classroom/courses/coursework'
-      ) {
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
-
-        if (session === undefined) {
-          sendJson(
-            response,
-            401,
-            {
-              error: {
-                code: 'unauthenticated',
-                message: 'Authentication is required.',
-              },
-            },
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
-          return
-        }
-
-        if (
-          !hasRequiredScopes(session, [
-            GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
-          ]) ||
-          !hasAnyRequiredScope(session, [
-            GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
-            GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
-          ])
-        ) {
-          sendScopeForbidden(
-            response,
-            'classroom_scope_missing',
-            'Required Google Classroom scopes are missing.',
-          )
-          return
-        }
-
-        try {
-          const courses =
-            await getClassroomService().listActiveCoursesWithCourseWork(
-              session.accessToken,
-            )
-          sendJson(response, 200, { courses })
-        } catch (error) {
-          if (error instanceof ClassroomRequestError && error.status === 401) {
-            sessionStore.delete(sessionId)
-            sendJson(
-              response,
-              401,
-              {
-                error: {
-                  code: 'session_expired',
-                  message: 'The Google session has expired.',
-                },
-              },
-              { 'Set-Cookie': clearSessionCookie(secureCookie) },
-            )
-            return
-          }
-
-          if (error instanceof ClassroomRequestError && error.status === 403) {
-            sendJson(response, 403, {
-              error: {
-                code: 'classroom_forbidden',
-                message: 'Google Classroom access was denied.',
-              },
-            })
-            return
-          }
-
-          if (error instanceof ClassroomRequestError) {
-            sendJson(response, 502, {
-              error: {
-                code: 'classroom_unavailable',
-                message: 'Google Classroom is temporarily unavailable.',
-              },
-            })
-            return
-          }
-
-          throw error
-        }
-        return
-      }
-
-      if (
-        request.method === 'GET' &&
-        requestUrl.pathname === '/api/gmail/connection'
-      ) {
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
-
-        if (session === undefined) {
-          sendJson(
-            response,
-            401,
-            {
-              error: {
-                code: 'unauthenticated',
-                message: 'Authentication is required.',
-              },
-            },
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
-          return
-        }
-
-        if (!hasRequiredScopes(session, [GOOGLE_GMAIL_READONLY_SCOPE])) {
-          sendScopeForbidden(
-            response,
-            'gmail_forbidden',
-            'Gmail access was denied.',
-          )
-          return
-        }
-
-        try {
-          await getGmailService().checkConnection(session.accessToken)
-          sendJson(response, 200, { connected: true })
-        } catch (error) {
-          if (error instanceof GmailRequestError && error.status === 401) {
-            sessionStore.delete(sessionId)
-            sendJson(
-              response,
-              401,
-              {
-                error: {
-                  code: 'session_expired',
-                  message: 'The Google session has expired.',
-                },
-              },
-              { 'Set-Cookie': clearSessionCookie(secureCookie) },
-            )
-            return
-          }
-
-          if (
-            error instanceof GmailRequestError &&
-            error.code === 'permission_denied'
-          ) {
-            sendJson(response, 403, {
-              error: {
-                code: 'gmail_forbidden',
-                message: 'Gmail access was denied.',
-              },
-            })
-            return
-          }
-
-          if (
-            error instanceof GmailRequestError &&
-            error.code === 'rate_limited'
-          ) {
-            sendJson(response, 503, {
-              error: {
-                code: 'gmail_rate_limited',
-                message: 'Gmail is temporarily rate limited.',
-              },
-            })
-            return
-          }
-
-          if (error instanceof GmailRequestError) {
-            sendJson(response, 502, {
-              error: {
-                code: 'gmail_unavailable',
-                message: 'Gmail is temporarily unavailable.',
-              },
-            })
-            return
-          }
-
-          throw error
-        }
-        return
-      }
-
-      const gmailFormResponseId =
-        request.method === 'GET'
-          ? readGmailFormResponseId(requestUrl)
-          : undefined
-      if (gmailFormResponseId !== undefined && gmailFormResponseId !== null) {
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
-
-        if (session === undefined) {
-          sendJson(
-            response,
-            401,
-            {
-              error: {
-                code: 'unauthenticated',
-                message: 'Authentication is required.',
-              },
-            },
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
-          return
-        }
-
-        if (!hasRequiredScopes(session, [GOOGLE_GMAIL_READONLY_SCOPE])) {
-          sendScopeForbidden(
-            response,
-            'gmail_forbidden',
-            'Gmail access was denied.',
-          )
-          return
-        }
-
-        if (!isValidGoogleFormId(gmailFormResponseId)) {
-          sendJson(response, 400, {
+        return sendRedirect(response, authUrl, setCookie)
+      } catch (error) {
+        if (error instanceof OAuthConfigurationError) {
+          return sendJson(response, 503, {
             error: {
-              code: 'invalid_form_id',
-              message: 'A valid Google Form ID is required.',
+              code: 'oauth_not_configured',
+              message: 'Google OAuth is not configured.',
             },
           })
-          return
         }
 
-        try {
-          const result = await getGmailService().checkFormResponse(
-            session.accessToken,
-            gmailFormResponseId,
-          )
-          sendJson(response, 200, normalizeGmailFormResponse(result))
-        } catch (error) {
-          if (
-            error instanceof GmailRequestError &&
-            error.code === 'invalid_form_id'
-          ) {
-            sendJson(response, 400, {
-              error: {
-                code: 'invalid_form_id',
-                message: 'A valid Google Form ID is required.',
-              },
-            })
-            return
-          }
-
-          if (error instanceof GmailRequestError && error.status === 401) {
-            sessionStore.delete(sessionId)
-            sendJson(
-              response,
-              401,
-              {
-                error: {
-                  code: 'session_expired',
-                  message: 'The Google session has expired.',
-                },
-              },
-              { 'Set-Cookie': clearSessionCookie(secureCookie) },
-            )
-            return
-          }
-
-          if (
-            error instanceof GmailRequestError &&
-            error.code === 'permission_denied'
-          ) {
-            sendJson(response, 403, {
-              error: {
-                code: 'gmail_forbidden',
-                message: 'Gmail access was denied.',
-              },
-            })
-            return
-          }
-
-          if (
-            error instanceof GmailRequestError &&
-            error.code === 'rate_limited'
-          ) {
-            sendJson(response, 503, {
-              error: {
-                code: 'gmail_rate_limited',
-                message: 'Gmail is temporarily rate limited.',
-              },
-            })
-            return
-          }
-
-          if (error instanceof GmailRequestError) {
-            sendJson(response, 502, {
-              error: {
-                code: 'gmail_unavailable',
-                message: 'Gmail is temporarily unavailable.',
-              },
-            })
-            return
-          }
-
-          throw error
-        }
-        return
+        throw error
       }
+    }
 
-      if (
-        request.method === 'POST' &&
-        requestUrl.pathname === '/api/auth/logout'
-      ) {
-        if (request.headers.origin !== serverConfig.frontendOrigin) {
-          sendJson(response, 403, {
-            error: {
-              code: 'invalid_origin',
-              message: 'The request origin is not allowed.',
-            },
-          })
-          return
-        }
-
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
-
-        if (session !== undefined) {
-          try {
-            await getOAuthService().revokeAccessToken(session.accessToken)
-          } catch {
-            logger.warn('Google access token revocation failed.')
-          }
-        }
-
-        if (sessionId !== undefined) {
-          sessionStore.delete(sessionId)
-        }
-
-        response.writeHead(204, {
-          'Set-Cookie': clearSessionCookie(secureCookie),
-          'Cache-Control': PRIVATE_NO_STORE_CACHE_CONTROL,
-        })
-        response.end()
-        return
-      }
-
-      response.writeHead(404, {
-        'Content-Type': 'text/plain; charset=utf-8',
+    if (method === 'GET' && pathname === '/api/auth/google/callback') {
+      const sessionId = readSessionIdFromRequest(request)
+      const errorValue = requestUrl.searchParams.get('error')
+      const code = requestUrl.searchParams.get('code')
+      const state = requestUrl.searchParams.get('state')
+      const clearCookie = buildSessionCookie('', {
+        clear: true,
+        secure: environment.NODE_ENV === 'production',
       })
-      response.end('Not Found')
-    } catch {
-      logger.error('Unhandled backend request error.')
-      sendJson(response, 500, {
-        error: {
-          code: 'internal_error',
-          message: 'An unexpected error occurred.',
-        },
+
+      if (errorValue === 'access_denied') {
+        return sendRedirect(
+          response,
+          `${serverConfig.frontendOrigin}/login?error=access_denied`,
+          clearCookie,
+        )
+      }
+
+      if (
+        typeof sessionId !== 'string' ||
+        typeof state !== 'string' ||
+        !sessionStore.consumePending(sessionId, state)
+      ) {
+        return sendRedirect(
+          response,
+          `${serverConfig.frontendOrigin}/login?error=invalid_state`,
+          clearCookie,
+        )
+      }
+
+      if (typeof code !== 'string' || code.length === 0) {
+        return sendRedirect(
+          response,
+          `${serverConfig.frontendOrigin}/login?error=invalid_state`,
+          clearCookie,
+        )
+      }
+
+      try {
+        const oauthService = oauthServiceFactory()
+        const session = await oauthService.exchangeCode(code)
+        const authenticatedSessionId = sessionStore.createAuthenticated(session)
+        const secureCookie = environment.NODE_ENV === 'production'
+        const setCookie = buildSessionCookie(authenticatedSessionId, {
+          secure: secureCookie,
+        })
+
+        return sendRedirect(
+          response,
+          `${serverConfig.frontendOrigin}/`,
+          setCookie,
+        )
+      } catch {
+        return sendRedirect(
+          response,
+          `${serverConfig.frontendOrigin}/login?error=oauth_failed`,
+          clearCookie,
+        )
+      }
+    }
+
+    if (method === 'GET' && pathname === '/api/auth/session') {
+      const sessionId = readSessionIdFromRequest(request)
+      if (typeof sessionId !== 'string' || sessionId.length === 0) {
+        return sendJson(response, 200, { authenticated: false })
+      }
+
+      const authenticatedSession = sessionStore.getAuthenticated(sessionId)
+      if (authenticatedSession === undefined) {
+        return sendJson(
+          response,
+          200,
+          { authenticated: false },
+          {
+            'set-cookie': buildSessionCookie('', {
+              clear: true,
+              secure: environment.NODE_ENV === 'production',
+            }),
+          },
+        )
+      }
+
+      return sendJson(response, 200, {
+        authenticated: true,
+        expiresAt: new Date(authenticatedSession.expiresAt).toISOString(),
       })
     }
+
+    if (method === 'POST' && pathname === '/api/auth/logout') {
+      const originHeader = request.headers?.origin
+      if (
+        typeof originHeader === 'string' &&
+        originHeader !== serverConfig.frontendOrigin
+      ) {
+        return sendJson(response, 403, { error: { code: 'invalid_origin' } })
+      }
+
+      const sessionId = readSessionIdFromRequest(request)
+      const clearCookie = buildSessionCookie('', {
+        clear: true,
+        secure: environment.NODE_ENV === 'production',
+      })
+
+      if (typeof sessionId === 'string' && sessionId.length > 0) {
+        const authenticatedSession = sessionStore.getAuthenticated(sessionId)
+        if (authenticatedSession !== undefined) {
+          try {
+            const oauthService = oauthServiceFactory()
+            await oauthService.revokeAccessToken(
+              authenticatedSession.accessToken,
+            )
+          } catch {
+            logger.warn?.('Google access token revocation failed.')
+          }
+        }
+
+        sessionStore.delete(sessionId)
+      }
+
+      response.writeHead(204, {
+        'set-cookie': clearCookie,
+      })
+      response.end()
+      return
+    }
+
+    if (method === 'GET' && pathname === '/api/classroom/courses/count') {
+      const authState = ensureAuthenticated(request, sessionStore)
+      if (!authState.ok) {
+        return sendJson(response, authState.status, authState.payload)
+      }
+
+      if (
+        !hasRequiredScope(
+          authState.session,
+          GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+        )
+      ) {
+        return sendJson(response, 403, {
+          error: {
+            code: 'classroom_forbidden',
+            message: 'Google Classroom access was denied.',
+          },
+        })
+      }
+
+      try {
+        const classroomService = classroomServiceFactory()
+        const count = await classroomService.countActiveCourses(
+          authState.session.accessToken,
+        )
+        return sendJson(response, 200, { count })
+      } catch (error) {
+        const result = buildGoogleClassroomErrorResponse(error)
+        if (result.status === 401) {
+          clearSessionForExpiredRequest(request, sessionStore)
+        }
+        const headers = result.setCookieHeader
+          ? { 'set-cookie': result.setCookieHeader }
+          : undefined
+        return sendJson(response, result.status, result.payload, headers)
+      }
+    }
+
+    if (method === 'GET' && pathname === '/api/classroom/coursework/forms') {
+      const authState = ensureAuthenticated(request, sessionStore)
+      if (!authState.ok) {
+        return sendJson(response, authState.status, authState.payload)
+      }
+
+      if (
+        !hasRequiredScope(
+          authState.session,
+          GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+        ) ||
+        !hasRequiredScope(
+          authState.session,
+          GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
+        )
+      ) {
+        return sendJson(response, 403, {
+          error: {
+            code: 'classroom_forbidden',
+            message: 'Google Classroom access was denied.',
+          },
+        })
+      }
+
+      try {
+        const classroomService = classroomServiceFactory()
+        const courseWork = await classroomService.listCourseWorkWithForms(
+          authState.session.accessToken,
+        )
+        return sendJson(response, 200, { courseWork })
+      } catch (error) {
+        const result = buildGoogleClassroomErrorResponse(error)
+        if (result.status === 401) {
+          clearSessionForExpiredRequest(request, sessionStore)
+        }
+        const headers = result.setCookieHeader
+          ? { 'set-cookie': result.setCookieHeader }
+          : undefined
+        return sendJson(response, result.status, result.payload, headers)
+      }
+    }
+
+    if (method === 'GET' && pathname === '/api/gmail/connection') {
+      const authState = ensureAuthenticated(request, sessionStore)
+      if (!authState.ok) {
+        return sendJson(response, authState.status, authState.payload)
+      }
+
+      if (!hasRequiredScope(authState.session, GOOGLE_GMAIL_READONLY_SCOPE)) {
+        return sendJson(response, 403, {
+          error: {
+            code: 'gmail_forbidden',
+            message: 'Gmail access was denied.',
+          },
+        })
+      }
+
+      try {
+        const gmailService = gmailServiceFactory()
+        await gmailService.checkConnection(authState.session.accessToken)
+        return sendJson(response, 200, { connected: true })
+      } catch (error) {
+        const result = buildGmailErrorResponse(error)
+        if (result.status === 401) {
+          clearSessionForExpiredRequest(request, sessionStore)
+        }
+        const headers = result.setCookieHeader
+          ? { 'set-cookie': result.setCookieHeader }
+          : undefined
+        return sendJson(response, result.status, result.payload, headers)
+      }
+    }
+
+    if (pathname.startsWith('/api/gmail/forms/')) {
+      const formResponseMatch = pathname.match(
+        /^\/api\/gmail\/forms\/([^/]+)\/response$/,
+      )
+      if (formResponseMatch === null) {
+        if (pathname === '/api/gmail/forms') {
+          return sendJson(response, 404, { error: { code: 'not_found' } })
+        }
+        return sendJson(response, 404, { error: { code: 'not_found' } })
+      }
+
+      const formId = formResponseMatch[1]
+      if (!isValidGoogleFormId(formId)) {
+        return sendJson(response, 400, { error: { code: 'invalid_form_id' } })
+      }
+
+      if (method !== 'GET') {
+        return sendJson(response, 404, { error: { code: 'not_found' } })
+      }
+
+      const authState = ensureAuthenticated(request, sessionStore)
+      if (!authState.ok) {
+        return sendJson(response, authState.status, authState.payload)
+      }
+
+      if (!hasRequiredScope(authState.session, GOOGLE_GMAIL_READONLY_SCOPE)) {
+        return sendJson(response, 403, {
+          error: {
+            code: 'gmail_forbidden',
+            message: 'Gmail access was denied.',
+          },
+        })
+      }
+
+      try {
+        const gmailService = gmailServiceFactory()
+        const result = await gmailService.checkFormResponse(
+          authState.session.accessToken,
+          formId,
+        )
+
+        const payload = {}
+        const allowedStatuses = new Set([
+          'submitted',
+          'unreviewable',
+          'needsReview',
+        ])
+
+        if (
+          typeof result?.status !== 'string' ||
+          !allowedStatuses.has(result.status)
+        ) {
+          throw new GmailRequestError('invalid_response')
+        }
+
+        payload.status = result.status
+
+        if (result.status === 'submitted') {
+          const receiptReceivedAt = result.receiptReceivedAt
+          if (
+            typeof receiptReceivedAt !== 'string' ||
+            !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
+              receiptReceivedAt,
+            )
+          ) {
+            throw new GmailRequestError('invalid_response')
+          }
+          payload.receiptReceivedAt = receiptReceivedAt
+        }
+
+        return sendJson(response, 200, payload)
+      } catch (error) {
+        const result = buildGmailErrorResponse(error)
+        if (result.status === 401) {
+          clearSessionForExpiredRequest(request, sessionStore)
+        }
+        const headers = result.setCookieHeader
+          ? { 'set-cookie': result.setCookieHeader }
+          : undefined
+        return sendJson(response, result.status, result.payload, headers)
+      }
+    }
+
+    response.writeHead(404)
+    response.end()
   }
 }
