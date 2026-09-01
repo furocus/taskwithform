@@ -136,6 +136,11 @@ select:disabled {
   color: var(--color-btn-calendar-icon);
 }
 
+.icon-button--home {
+  background-color: var(--color-btn-calendar-bg);
+  color: var(--color-btn-calendar-icon);
+}
+
 .text-accent {
   color: var(--color-danger);
 }

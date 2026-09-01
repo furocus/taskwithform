@@ -25,7 +25,9 @@ const moveMonth = (amount: number) => {
 
 <template>
   <section class="mx-auto w-full max-w-5xl space-y-4">
-    <div class="flex items-center justify-between gap-3">
+    <div
+      class="flex items-center justify-between gap-3 px-4 sm:px-6 pt-5 -mx-4 sm:-mx-6"
+    >
       <button class="calendar-nav-button" type="button" @click="moveMonth(-1)">
         <span aria-hidden="true">‹</span> 前の月
       </button>
@@ -65,16 +67,29 @@ const moveMonth = (amount: number) => {
             {{ day.dayOfMonth }}
           </span>
           <div class="calendar-tasks">
-            <span
+            <div
               v-for="task in tasksByDate[day.date] ?? []"
               :key="task.id"
-              class="calendar-task"
-              :style="{
-                borderLeftColor: getCourseColors(task.courseId).accent,
-              }"
-              :title="task.title"
-              >{{ task.title }}</span
+              class="calendar-task-item"
             >
+              <span
+                class="calendar-task-badge"
+                :style="{
+                  backgroundColor: getCourseColors(task.courseId).badgeBg,
+                  color: getCourseColors(task.courseId).badgeText,
+                }"
+              >
+                {{ task.subjectName }}
+              </span>
+              <span
+                class="calendar-task"
+                :style="{
+                  borderLeftColor: getCourseColors(task.courseId).accent,
+                }"
+                :title="task.title"
+                >{{ task.title }}</span
+              >
+            </div>
           </div>
         </div>
       </div>
@@ -104,6 +119,9 @@ const moveMonth = (amount: number) => {
   color: var(--color-text-primary);
   font-size: 0.8125rem;
   font-weight: 600;
+  border: none;
+  background: none;
+  cursor: pointer;
 }
 
 .calendar-nav-button:hover {
@@ -177,6 +195,23 @@ const moveMonth = (amount: number) => {
   gap: 0.25rem;
   margin-top: 0.25rem;
   overflow: hidden;
+}
+
+.calendar-task-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.calendar-task-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  width: fit-content;
+  line-height: 1;
 }
 
 .calendar-task {
