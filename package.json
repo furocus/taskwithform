@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev": "vite --host 0.0.0.0 --port 5173",
     "dev:frontend": "vite --host 0.0.0.0 --port 5173",
     "dev:mock": "vite --config vite.mock.config.ts --host 0.0.0.0 --port 5174",
     "dev:backend": "node --env-file-if-exists=.env --watch backend/server.mjs",
@@ -24,7 +24,6 @@
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.4.6",
-    "concurrently": "^10.0.5",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^26.1.0",
     "prettier": "^3.9.6",
