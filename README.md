@@ -80,14 +80,14 @@ FRONTEND_ORIGIN=http://localhost:5173
 認証後は次のバックエンドAPIを利用できます。
 
 - `GET /api/classroom/courses/count`: ACTIVEなコースの合計件数
-- `GET /api/classroom/coursework/forms`: PUBLISHEDな課題と添付されたGoogle FormのURL identifier（`formId`）・形式（`formIdType`）
+- `GET /api/classroom/courses/coursework`: ACTIVEなコースごとのPUBLISHEDな課題と、添付されたGoogle FormのURL identifier（`formId`）・形式（`formIdType`）。課題が0件のコースも`courseWork`を空配列として返す
 - `GET /api/gmail/connection`: Gmail APIへ接続できる場合は`{"connected":true}`
 
 Gmail接続確認ではメール一覧やメール本文を取得しません。`formId`はForms APIのcanonical resource IDではなく、Google Form URL中のopaque identifierです。
 
 認証情報はバックエンドのメモリ上だけに保持します。アクセストークンの期限切れまたはバックエンドの再起動後は、再ログインが必要です。
 
-OAuth基盤の設計は[Issue 10 Google OAuth実装ノート](docs/obsidian/issue-10-google-oauth.md)、課題・Form ID取得とGmail接続確認の設計は[Issue 18実装ノート](docs/obsidian/issue-18-classroom-gmail-foundation.md)にまとめています。
+OAuth基盤の設計は[Issue 10 Google OAuth実装ノート](docs/obsidian/issue-10-google-oauth.md)、課題・Form ID取得とGmail接続確認の設計は[Issue 18実装ノート](docs/obsidian/issue-18-classroom-gmail-foundation.md)、コース単位のDB同期とAPI契約変更の経緯は[Issue 27実装ノート](docs/obsidian/issue-27-classroom-course-sync.md)にまとめています。
 
 ## 開発環境のセットアップ
 

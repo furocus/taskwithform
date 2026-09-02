@@ -159,32 +159,35 @@ describe('Google Classroom service', () => {
     const service = createGoogleClassroomService({ fetchImplementation })
 
     await expect(
-      service.listCourseWorkWithForms('access-token'),
+      service.listActiveCoursesWithCourseWork('access-token'),
     ).resolves.toEqual([
       {
-        courseId: 'course/1',
-        courseName: '数学',
-        courseWorkId: 'work-1',
-        courseWorkType: 'ASSIGNMENT',
-        title: '確認テスト',
-        description: 'Google Formに回答してください。',
-        alternateLink: 'https://classroom.google.com/example',
-        dueDate: '2026-08-09',
-        forms: [
+        id: 'course/1',
+        name: '数学',
+        courseWork: [
           {
-            formId: 'published-id',
-            formIdType: 'published',
-            formUrl: 'https://docs.google.com/forms/d/e/published-id/viewform',
+            courseWorkId: 'work-1',
+            courseWorkType: 'ASSIGNMENT',
+            title: '確認テスト',
+            description: 'Google Formに回答してください。',
+            alternateLink: 'https://classroom.google.com/example',
+            dueDate: '2026-08-09',
+            forms: [
+              {
+                formId: 'published-id',
+                formIdType: 'published',
+                formUrl:
+                  'https://docs.google.com/forms/d/e/published-id/viewform',
+              },
+            ],
+          },
+          {
+            courseWorkId: 'work-2',
+            courseWorkType: 'ASSIGNMENT',
+            title: '資料確認',
+            forms: [],
           },
         ],
-      },
-      {
-        courseId: 'course/1',
-        courseName: '数学',
-        courseWorkId: 'work-2',
-        courseWorkType: 'ASSIGNMENT',
-        title: '資料確認',
-        forms: [],
       },
     ])
 
@@ -245,15 +248,19 @@ describe('Google Classroom service', () => {
     const service = createGoogleClassroomService({ fetchImplementation })
 
     await expect(
-      service.listCourseWorkWithForms('access-token'),
+      service.listActiveCoursesWithCourseWork('access-token'),
     ).resolves.toEqual([
       {
-        courseId: 'student-course',
-        courseName: '数学',
-        courseWorkId: 'work-1',
-        courseWorkType: 'ASSIGNMENT',
-        title: '確認テスト',
-        forms: [],
+        id: 'student-course',
+        name: '数学',
+        courseWork: [
+          {
+            courseWorkId: 'work-1',
+            courseWorkType: 'ASSIGNMENT',
+            title: '確認テスト',
+            forms: [],
+          },
+        ],
       },
     ])
     expect(fetchImplementation).toHaveBeenCalledTimes(2)
@@ -262,6 +269,54 @@ describe('Google Classroom service', () => {
         requestUrl.pathname.includes('teacher-course'),
       ),
     ).toBe(false)
+  })
+
+  it('keeps an active course that has no published course work', async () => {
+    const fetchImplementation = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          courses: [
+            { id: 'course-1', name: '数学' },
+            { id: 'course-2', name: '英語' },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          courseWork: [
+            {
+              id: 'work-1',
+              title: '確認テスト',
+              workType: 'ASSIGNMENT',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(createJsonResponse({}))
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listActiveCoursesWithCourseWork('access-token'),
+    ).resolves.toEqual([
+      {
+        id: 'course-1',
+        name: '数学',
+        courseWork: [
+          {
+            courseWorkId: 'work-1',
+            courseWorkType: 'ASSIGNMENT',
+            title: '確認テスト',
+            forms: [],
+          },
+        ],
+      },
+      {
+        id: 'course-2',
+        name: '英語',
+        courseWork: [],
+      },
+    ])
   })
 
   it('rejects an unrecognized Form URL instead of returning an incorrect ID', async () => {
@@ -287,7 +342,7 @@ describe('Google Classroom service', () => {
     const service = createGoogleClassroomService({ fetchImplementation })
 
     await expect(
-      service.listCourseWorkWithForms('access-token'),
+      service.listActiveCoursesWithCourseWork('access-token'),
     ).rejects.toMatchObject({ code: 'invalid_response' })
   })
 

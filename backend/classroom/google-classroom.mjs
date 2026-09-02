@@ -186,7 +186,7 @@ export function extractGoogleFormId(formUrl) {
   return extractGoogleFormIdDetails(formUrl).formId
 }
 
-function mapCourseWork(course, courseWork) {
+function mapCourseWork(courseWork) {
   if (
     courseWork === null ||
     typeof courseWork !== 'object' ||
@@ -199,8 +199,6 @@ function mapCourseWork(course, courseWork) {
   }
 
   const mapped = {
-    courseId: course.id,
-    courseName: course.name,
     courseWorkId: readRequiredString(courseWork.id),
     courseWorkType: readRequiredString(courseWork.workType),
     title: readRequiredString(courseWork.title),
@@ -276,7 +274,7 @@ export function createGoogleClassroomService({
       return courses.length
     },
 
-    async listCourseWorkWithForms(accessToken) {
+    async listActiveCoursesWithCourseWork(accessToken) {
       const courses = await fetchAllPages({
         accessToken,
         collectionName: 'courses',
@@ -335,11 +333,13 @@ export function createGoogleClassroomService({
           },
         })
 
-        result.push(
-          ...courseWorkItems.map((courseWork) =>
-            mapCourseWork(normalizedCourse, courseWork),
+        result.push({
+          id: normalizedCourse.id,
+          name: normalizedCourse.name,
+          courseWork: courseWorkItems.map((courseWork) =>
+            mapCourseWork(courseWork),
           ),
-        )
+        })
       }
 
       return result

@@ -457,7 +457,7 @@ export function createRequestHandler({
 
       if (
         request.method === 'GET' &&
-        requestUrl.pathname === '/api/classroom/coursework/forms'
+        requestUrl.pathname === '/api/classroom/courses/coursework'
       ) {
         const sessionId = readSessionId(request)
         const session =
@@ -498,11 +498,11 @@ export function createRequestHandler({
         }
 
         try {
-          const courseWork =
-            await getClassroomService().listCourseWorkWithForms(
+          const courses =
+            await getClassroomService().listActiveCoursesWithCourseWork(
               session.accessToken,
             )
-          sendJson(response, 200, { courseWork })
+          sendJson(response, 200, { courses })
         } catch (error) {
           if (error instanceof ClassroomRequestError && error.status === 401) {
             sessionStore.delete(sessionId)

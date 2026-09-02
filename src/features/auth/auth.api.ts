@@ -1,33 +1,14 @@
+import {
+  BackendApiError,
+  readBackendError,
+  type FetchImplementation,
+} from '../../shared/api/backendApi'
+
+export { BackendApiError } from '../../shared/api/backendApi'
+
 export interface AuthSession {
   authenticated: boolean
   expiresAt?: string
-}
-
-export class BackendApiError extends Error {
-  constructor(
-    public readonly code: string,
-    public readonly status: number,
-  ) {
-    super(code)
-    this.name = 'BackendApiError'
-  }
-}
-
-type FetchImplementation = typeof fetch
-
-async function readBackendError(response: Response): Promise<BackendApiError> {
-  try {
-    const responseBody = (await response.json()) as {
-      error?: { code?: unknown }
-    }
-    if (typeof responseBody.error?.code === 'string') {
-      return new BackendApiError(responseBody.error.code, response.status)
-    }
-  } catch {
-    // Fall back to a stable application error when the backend is unavailable.
-  }
-
-  return new BackendApiError('backend_error', response.status)
 }
 
 export async function getAuthSession(

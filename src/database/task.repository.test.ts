@@ -149,6 +149,61 @@ describe('TaskRepository', () => {
     ])
   })
 
+  it('replaces active course snapshots and drops the inactive ones at once', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-stale',
+      fetchedDate: '2026-07-25',
+      tasks: [createTaskInput({ courseId: 'course-stale' })],
+    })
+
+    await repository.replaceActiveCourseSnapshots([
+      {
+        courseId: 'course-1',
+        fetchedDate: '2026-07-26',
+        tasks: [createTaskInput()],
+      },
+      { courseId: 'course-2', fetchedDate: '2026-07-26', tasks: [] },
+    ])
+
+    expect(
+      (await repository.getAllTasks()).map((task) => task.courseId),
+    ).toEqual(['course-1'])
+    expect(await repository.getSyncStates()).toEqual([
+      { courseId: 'course-1', fetchedDate: '2026-07-26' },
+      { courseId: 'course-2', fetchedDate: '2026-07-26' },
+    ])
+  })
+
+  it('rolls back every course when one snapshot is rejected', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-25',
+      tasks: [createTaskInput()],
+    })
+
+    await expect(
+      repository.replaceActiveCourseSnapshots([
+        {
+          courseId: 'course-1',
+          fetchedDate: '2026-07-26',
+          tasks: [createTaskInput({ title: '一次方程式（更新）' })],
+        },
+        {
+          courseId: 'course-2',
+          fetchedDate: '2026-07-26',
+          tasks: [createTaskInput({ courseId: 'course-3' })],
+        },
+      ]),
+    ).rejects.toThrow('does not match task courseId')
+
+    expect(await repository.getAllTasks()).toMatchObject([
+      { courseId: 'course-1', title: '一次方程式' },
+    ])
+    expect(await repository.getSyncStates()).toEqual([
+      { courseId: 'course-1', fetchedDate: '2026-07-25' },
+    ])
+  })
+
   it('removes tasks and sync state for inactive courses', async () => {
     await repository.replaceCourseSnapshot({
       courseId: 'course-1',

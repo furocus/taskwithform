@@ -24,16 +24,16 @@ Issue #35の完了判定は、実測結果に次のすべてが記録され、�
 
 ### バックエンドのHTTP境界
 
-| 操作           | エンドポイント                          | 成功時の確認対象                                 | 機密情報の扱い                                       |
-| -------------- | --------------------------------------- | ------------------------------------------------ | ---------------------------------------------------- |
-| OAuth開始      | `GET /api/auth/google`                  | GoogleへのリダイレクトとHttpOnlyセッションCookie | stateとCookie値を記録しない                          |
-| OAuth callback | `GET /api/auth/google/callback`         | セッション作成後にフロントへ戻る                 | code、アクセストークン、Googleレスポンスを記録しない |
-| セッション     | `GET /api/auth/session`                 | `authenticated`、期限切れ時の`false`             | token、付与スコープ一覧を返さない                    |
-| コース件数     | `GET /api/classroom/courses/count`      | ACTIVEコース件数                                 | コース一覧や個人情報を返さない                       |
-| 課題/Form一覧  | `GET /api/classroom/coursework/forms`   | PUBLISHED課題とForm URL由来のID・形式            | Classroom生レスポンスを返さない                      |
-| Gmail接続      | `GET /api/gmail/connection`             | `{ "connected": true }`                          | メールアドレス、一覧、本文を返さない                 |
-| Form回答確認   | `GET /api/gmail/forms/:formId/response` | `status`と、submitted時だけ`receiptReceivedAt`   | 本文、回答、message IDを返さない                     |
-| ログアウト     | `POST /api/auth/logout`                 | 204、Cookie削除、Google token revoke試行         | token値とrevokeエラー本文を記録しない                |
+| 操作           | エンドポイント                          | 成功時の確認対象                                                                 | 機密情報の扱い                                       |
+| -------------- | --------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| OAuth開始      | `GET /api/auth/google`                  | GoogleへのリダイレクトとHttpOnlyセッションCookie                                 | stateとCookie値を記録しない                          |
+| OAuth callback | `GET /api/auth/google/callback`         | セッション作成後にフロントへ戻る                                                 | code、アクセストークン、Googleレスポンスを記録しない |
+| セッション     | `GET /api/auth/session`                 | `authenticated`、期限切れ時の`false`                                             | token、付与スコープ一覧を返さない                    |
+| コース件数     | `GET /api/classroom/courses/count`      | ACTIVEコース件数                                                                 | コース一覧や個人情報を返さない                       |
+| 課題/Form一覧  | `GET /api/classroom/courses/coursework` | コース単位のPUBLISHED課題とForm URL由来のID・形式（課題0件のACTIVEコースも含む） | Classroom生レスポンスを返さない                      |
+| Gmail接続      | `GET /api/gmail/connection`             | `{ "connected": true }`                                                          | メールアドレス、一覧、本文を返さない                 |
+| Form回答確認   | `GET /api/gmail/forms/:formId/response` | `status`と、submitted時だけ`receiptReceivedAt`                                   | 本文、回答、message IDを返さない                     |
+| ログアウト     | `POST /api/auth/logout`                 | 204、Cookie削除、Google token revoke試行                                         | token値とrevokeエラー本文を記録しない                |
 
 OAuthはClassroom courses、Classroom coursework、Gmailの読み取り専用スコープを要求します。Googleがcourseworkの付与スコープを`classroom.student-submissions.me.readonly`として返す場合も、現行バックエンドは同等の表記として扱います。スコープ値自体は結果記録へ貼り付けません。
 
@@ -45,11 +45,11 @@ OAuthはClassroom courses、Classroom coursework、Gmailの読み取り専用ス
 - `syncStates`: コースごとの取得日
 - `answerConfirmations`: Form URL、確認状態、確認日時
 
-`TaskRepository.replaceCourseSnapshot()`は`courseId + courseWorkId`を外部同一性として課題スナップショットを置換し、同じ課題の内部IDを維持します。`TaskRepository.clearLocalData()`は現時点では`tasks`と`syncStates`を消去します。`AnswerConfirmationRepository.clearAll()`は別メソッドであり、ログアウトや同期処理にはまだ接続されていません。
+`TaskRepository.replaceCourseSnapshot()`は`courseId + courseWorkId`を外部同一性として課題スナップショットを置換し、同じ課題の内部IDを維持します。`TaskRepository.replaceActiveCourseSnapshots()`は全ACTIVEコースの置換と非ACTIVEコースの削除を単一トランザクションで行い、途中で失敗した場合は既存データを保持します。`TaskRepository.clearLocalData()`は現時点では`tasks`と`syncStates`を消去します。`AnswerConfirmationRepository.clearAll()`は別メソッドであり、ログアウトや同期処理にはまだ接続されていません。
 
 ### 現時点で実データ検証を阻む事項
 
-- `/api/classroom/coursework/forms`の結果をCourseTaskSnapshotへ変換してIndexedDBへコース単位で同期する実装がない（Issue #27）。
+- `/api/classroom/courses/coursework`の結果をCourseTaskSnapshotへ変換してIndexedDBへコース単位で同期する処理は`syncClassroomCourses()`として実装済み（Issue #27）。ただし画面から呼び出す接続がないため、実測には後続のUI接続が必要である。
 - `/api/gmail/forms/:formId/response`の回答確認結果をIndexedDBへ保存・再取得する実装がない（別途必要なDB/UI後続Issue。現時点で未作成または未完了）。
 - バックエンドにDB保存用エンドポイントはなく、DBはブラウザ内だけで動く。
 - `AnswerConfirmationRecord`は自動採番IDだけで、`taskExternalKey + formId`の一意制約やupsertがない。再確認による重複防止は別途必要なDB後続Issue（現時点で未作成または未完了）である。
