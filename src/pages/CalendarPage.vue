@@ -26,13 +26,13 @@ const moveMonth = (amount: number) => {
 <template>
   <section class="mx-auto w-full max-w-5xl space-y-4">
     <div
-      class="flex items-center justify-between gap-3 px-4 sm:px-6 pt-5 -mx-4 sm:-mx-6"
+      class="-mx-3 flex w-full items-center justify-between gap-2 px-2 pt-4 sm:-mx-6 sm:gap-3 sm:px-6 sm:pt-5"
     >
       <button class="calendar-nav-button" type="button" @click="moveMonth(-1)">
         <span aria-hidden="true">‹</span> 前の月
       </button>
       <h1
-        class="text-lg font-bold text-[color:var(--color-text-primary)] sm:text-xl"
+        class="min-w-0 flex-1 text-center text-base font-bold text-[color:var(--color-text-primary)] sm:text-xl"
       >
         {{ monthLabel }}
       </h1>
@@ -122,6 +122,8 @@ const moveMonth = (amount: number) => {
   border: none;
   background: none;
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .calendar-nav-button:hover {
@@ -144,6 +146,7 @@ const moveMonth = (amount: number) => {
 
 .calendar-weekdays span {
   padding: 0.75rem 0;
+  white-space: nowrap;
 }
 
 .calendar-grid {
@@ -151,7 +154,9 @@ const moveMonth = (amount: number) => {
 }
 
 .calendar-day {
+  aspect-ratio: 1 / 1;
   min-width: 0;
+  overflow: hidden;
   padding: 0.5rem;
   border-right: 1px solid var(--color-border-soft);
   border-bottom: 1px solid var(--color-border-soft);
@@ -206,16 +211,25 @@ const moveMonth = (amount: number) => {
 
 .calendar-task-badge {
   display: inline-block;
+  max-width: 100%;
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;
   font-size: 0.625rem;
   font-weight: 600;
   width: fit-content;
+  max-width: 100%;
   line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .calendar-task {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
   border-left: 3px solid;
   padding-left: 0.3rem;
@@ -223,8 +237,8 @@ const moveMonth = (amount: number) => {
   font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .calendar-sunday {
@@ -245,14 +259,45 @@ const moveMonth = (amount: number) => {
   color: var(--color-danger);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 430px) {
+  .calendar-nav-button {
+    min-height: 2.5rem;
+    padding: 0.5rem 0.35rem;
+    font-size: 0.6875rem;
+  }
+
+  .calendar-weekdays {
+    font-size: 0.625rem;
+  }
+
+  .calendar-weekdays span {
+    padding: 0.5rem 0;
+  }
+
+  .calendar-grid {
+    grid-auto-rows: minmax(0, 1fr);
+  }
+
   .calendar-day {
-    min-height: 5.5rem;
-    padding: 0.35rem;
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+    padding: 0.3rem;
+  }
+
+  .calendar-date {
+    min-width: 1.25rem;
+    min-height: 1.25rem;
+    font-size: 0.625rem;
+  }
+
+  .calendar-task-badge {
+    padding: 0.2rem 0.35rem;
+    font-size: 0.5rem;
   }
 
   .calendar-task {
-    font-size: 0.625rem;
+    font-size: 0.5625rem;
+    line-height: 1.2;
   }
 }
 </style>

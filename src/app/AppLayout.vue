@@ -5,9 +5,9 @@ import AppHeader from './AppHeader.vue'
 </script>
 
 <template>
-  <div class="min-h-screen bg-[color:var(--color-bg-base)]">
+  <div class="min-h-screen w-full bg-[color:var(--color-bg-base)]">
     <AppHeader />
-    <main class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+    <main class="mx-auto w-full max-w-3xl px-3 py-4 sm:px-6 sm:py-6">
       <RouterView />
     </main>
   </div>
