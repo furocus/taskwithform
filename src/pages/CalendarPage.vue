@@ -1,26 +1,303 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
+import { getCalendarDays } from '../features/calendar/calendar.utils'
+import { useCalendar } from '../features/calendar/useCalendar'
+import { getCourseColors } from '../features/tasks/task.utils'
 
-const router = useRouter()
+const now = new Date()
+const displayedMonth = ref(new Date(now.getFullYear(), now.getMonth(), 1))
+const { status, tasksByDate, reload } = useCalendar(displayedMonth)
 
-const goToMain = () => {
-  router.push('/')
+const monthLabel = computed(
+  () =>
+    `${displayedMonth.value.getFullYear()}年${displayedMonth.value.getMonth() + 1}月`,
+)
+const calendarDays = computed(() => getCalendarDays(displayedMonth.value))
+
+const moveMonth = (amount: number) => {
+  displayedMonth.value = new Date(
+    displayedMonth.value.getFullYear(),
+    displayedMonth.value.getMonth() + amount,
+    1,
+  )
 }
 </script>
 
 <template>
-  <section
-    class="mx-auto max-w-3xl rounded-xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-bg-surface)] p-6 text-center shadow-sm"
-  >
-    <p class="text-sm text-[color:var(--color-text-secondary)] mb-4">
-      カレンダーページは現在準備中です。後ほどご利用ください。
-    </p>
-    <button
-      type="button"
-      class="rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-bg-canvas)] px-4 py-2 text-sm font-semibold text-[color:var(--color-text-primary)]"
-      @click="goToMain"
+  <section class="mx-auto w-full max-w-5xl space-y-4">
+    <div
+      class="-mx-3 flex w-full items-center justify-between gap-2 px-2 pt-4 sm:-mx-6 sm:gap-3 sm:px-6 sm:pt-5"
     >
-      課題一覧へ戻る
-    </button>
+      <button class="calendar-nav-button" type="button" @click="moveMonth(-1)">
+        <span aria-hidden="true">‹</span> 前の月
+      </button>
+      <h1
+        class="min-w-0 flex-1 text-center text-base font-bold text-[color:var(--color-text-primary)] sm:text-xl"
+      >
+        {{ monthLabel }}
+      </h1>
+      <button class="calendar-nav-button" type="button" @click="moveMonth(1)">
+        次の月 <span aria-hidden="true">›</span>
+      </button>
+    </div>
+
+    <div class="panel-card overflow-hidden">
+      <div class="calendar-weekdays" aria-hidden="true">
+        <span class="calendar-sunday">日</span><span>月</span><span>火</span
+        ><span>水</span><span>木</span><span>金</span
+        ><span class="calendar-saturday">土</span>
+      </div>
+      <div class="calendar-grid" aria-label="月間カレンダー">
+        <div
+          v-for="day in calendarDays"
+          :key="day.date"
+          class="calendar-day"
+          :class="{
+            'calendar-day-muted': !day.isCurrentMonth,
+            'calendar-day-today': day.isToday,
+          }"
+        >
+          <span
+            class="calendar-date"
+            :class="{
+              'calendar-sunday': day.dayOfWeek === 0,
+              'calendar-saturday': day.dayOfWeek === 6,
+            }"
+          >
+            {{ day.dayOfMonth }}
+          </span>
+          <div class="calendar-tasks">
+            <div
+              v-for="task in tasksByDate[day.date] ?? []"
+              :key="task.id"
+              class="calendar-task-item"
+            >
+              <span
+                class="calendar-task-badge"
+                :style="{
+                  backgroundColor: getCourseColors(task.courseId).badgeBg,
+                  color: getCourseColors(task.courseId).badgeText,
+                }"
+              >
+                {{ task.subjectName }}
+              </span>
+              <span
+                class="calendar-task"
+                :style="{
+                  borderLeftColor: getCourseColors(task.courseId).accent,
+                }"
+                :title="task.title"
+                >{{ task.title }}</span
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p v-if="status === 'loading'" class="calendar-message">読み込み中...</p>
+    <p v-else-if="status === 'empty'" class="calendar-message">
+      この月の未提出課題はありません。
+    </p>
+    <div v-else-if="status === 'error'" class="calendar-message calendar-error">
+      <p>カレンダーの読み込みに失敗しました。</p>
+      <button
+        type="button"
+        class="mt-2 font-semibold underline"
+        @click="reload"
+      >
+        再試行
+      </button>
+    </div>
   </section>
 </template>
+
+<style scoped>
+.calendar-nav-button {
+  min-height: 2.75rem;
+  padding: 0.625rem 0.75rem;
+  color: var(--color-text-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: none;
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.calendar-nav-button:hover {
+  color: var(--color-danger);
+}
+
+.calendar-weekdays,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.calendar-weekdays {
+  border-bottom: 1px solid var(--color-border-soft);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.calendar-weekdays span {
+  padding: 0.75rem 0;
+  white-space: nowrap;
+}
+
+.calendar-grid {
+  grid-auto-rows: minmax(5.75rem, 1fr);
+}
+
+.calendar-day {
+  aspect-ratio: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.5rem;
+  border-right: 1px solid var(--color-border-soft);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.calendar-day:nth-child(7n) {
+  border-right: 0;
+}
+
+.calendar-day:nth-last-child(-n + 7) {
+  border-bottom: 0;
+}
+
+.calendar-day-muted {
+  background: color-mix(in srgb, var(--color-bg-base) 55%, transparent);
+}
+
+.calendar-day-muted .calendar-date {
+  color: var(--color-text-muted);
+}
+
+.calendar-date {
+  display: inline-flex;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.calendar-day-today .calendar-date {
+  background: var(--color-danger);
+  color: white;
+}
+
+.calendar-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  overflow: hidden;
+}
+
+.calendar-task-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.calendar-task-badge {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  width: fit-content;
+  max-width: 100%;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.calendar-task {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  border-left: 3px solid;
+  padding-left: 0.3rem;
+  color: var(--color-text-primary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.calendar-sunday {
+  color: var(--color-danger);
+}
+
+.calendar-saturday {
+  color: #2563eb;
+}
+
+.calendar-message {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.calendar-error {
+  color: var(--color-danger);
+}
+
+@media (max-width: 430px) {
+  .calendar-nav-button {
+    min-height: 2.5rem;
+    padding: 0.5rem 0.35rem;
+    font-size: 0.6875rem;
+  }
+
+  .calendar-weekdays {
+    font-size: 0.625rem;
+  }
+
+  .calendar-weekdays span {
+    padding: 0.5rem 0;
+  }
+
+  .calendar-grid {
+    grid-auto-rows: minmax(0, 1fr);
+  }
+
+  .calendar-day {
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+    padding: 0.3rem;
+  }
+
+  .calendar-date {
+    min-width: 1.25rem;
+    min-height: 1.25rem;
+    font-size: 0.625rem;
+  }
+
+  .calendar-task-badge {
+    padding: 0.2rem 0.35rem;
+    font-size: 0.5rem;
+  }
+
+  .calendar-task {
+    font-size: 0.5625rem;
+    line-height: 1.2;
+  }
+}
+</style>

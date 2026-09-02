@@ -71,9 +71,9 @@ const courseColors = computed(() => getCourseColors(props.courseId))
       </button>
     </div>
 
-    <div v-else class="space-y-3">
-      <div v-if="props.tasks.length > 0" class="rounded-xl p-3">
-        <div class="mb-2 flex items-center gap-2">
+    <div v-else class="w-full space-y-3">
+      <div v-if="props.tasks.length > 0" class="w-full rounded-xl p-3">
+        <div class="mb-2 flex min-w-0 items-center gap-2">
           <span
             class="task-list-accent inline-flex h-2.5 w-2.5 rounded-full"
             :style="{ backgroundColor: courseColors.accent }"
@@ -85,7 +85,7 @@ const courseColors = computed(() => getCourseColors(props.courseId))
             コース表示
           </span>
         </div>
-        <div class="space-y-3">
+        <div class="w-full space-y-3">
           <TaskCard
             v-for="task in props.tasks"
             :key="task.id"

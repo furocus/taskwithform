@@ -11,7 +11,7 @@ const formattedDate = `${today.getFullYear()}年${today.getMonth() + 1}月${toda
 
 const isCalendarPage = computed(() => route.name === 'calendar')
 const pageTitle = computed(() =>
-  isCalendarPage.value ? `${currentYear}年${currentMonth}月` : '課題一覧',
+  isCalendarPage.value ? 'カレンダー' : '課題一覧',
 )
 
 const goToCalendar = () => {
@@ -25,47 +25,25 @@ const goToMain = () => {
 
 <template>
   <header
-    class="border-b border-[color:var(--color-border-soft)] bg-[color:var(--color-bg-canvas)] px-4 py-5 sm:px-6"
+    class="w-full border-b border-[color:var(--color-border-soft)] bg-[color:var(--color-bg-canvas)] px-3 py-4 sm:px-6 sm:py-5"
   >
     <div
-      v-if="isCalendarPage"
-      class="mx-auto flex max-w-3xl items-center justify-between gap-4"
+      class="mx-auto flex w-full max-w-3xl items-start justify-between gap-3 sm:gap-4"
     >
-      <button
-        class="flex items-center gap-1 text-sm font-medium text-[color:var(--color-text-secondary)]"
-        type="button"
-        aria-label="戻る"
-        @click="goToMain"
-      >
-        <span aria-hidden="true">←</span>
-        <span>戻る</span>
-      </button>
-
-      <h1
-        class="text-2xl font-semibold tracking-tight text-[color:var(--color-text-primary)]"
-      >
-        {{ pageTitle }}
-      </h1>
-
-      <div class="w-16" aria-hidden="true"></div>
-    </div>
-
-    <div
-      v-else
-      class="mx-auto flex max-w-3xl items-start justify-between gap-4"
-    >
-      <div>
-        <p class="text-sm font-medium text-[color:var(--color-text-secondary)]">
+      <div class="min-w-0 flex-1">
+        <p
+          class="text-xs font-medium text-[color:var(--color-text-secondary)] sm:text-sm"
+        >
           {{ formattedDate }}
         </p>
         <h1
-          class="mt-1 text-2xl font-semibold tracking-tight text-[color:var(--color-text-primary)]"
+          class="mt-1 max-w-full break-words text-xl font-semibold tracking-tight text-[color:var(--color-text-primary)] sm:text-2xl"
         >
           {{ pageTitle }}
         </h1>
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex shrink-0 items-center gap-2">
         <button
           class="icon-button icon-button--bell relative"
           type="button"
@@ -91,12 +69,24 @@ const goToMain = () => {
         </button>
 
         <button
-          class="icon-button icon-button--calendar"
+          class="icon-button icon-button--home"
           type="button"
-          aria-label="カレンダー"
-          @click="goToCalendar"
+          :aria-label="isCalendarPage ? 'メイン画面' : 'カレンダー'"
+          @click="isCalendarPage ? goToMain() : goToCalendar()"
         >
           <svg
+            v-if="isCalendarPage"
+            class="h-5 w-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+          >
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            <polyline points="9 22 9 12 15 12 15 22" />
+          </svg>
+          <svg
+            v-else
             class="h-5 w-5"
             viewBox="0 0 24 24"
             fill="none"
@@ -113,3 +103,24 @@ const goToMain = () => {
     </div>
   </header>
 </template>
+
+<style scoped>
+@media (max-width: 430px) {
+  header {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .icon-button {
+    width: 2.5rem;
+    height: 2.5rem;
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+
+  .icon-button svg {
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+}
+</style>

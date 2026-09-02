@@ -64,7 +64,7 @@ const handleConfirmClick = (event: MouseEvent) => {
 
 <template>
   <article
-    class="card-interactive panel-card p-4 sm:p-5"
+    class="card-interactive panel-card w-full max-w-full min-w-0 overflow-hidden p-3 sm:p-5"
     :class="{ 'cursor-pointer': isInteractive }"
     :role="isInteractive ? 'button' : undefined"
     :tabindex="isInteractive ? 0 : undefined"
@@ -72,15 +72,15 @@ const handleConfirmClick = (event: MouseEvent) => {
     @keydown.enter="handleKeydown"
     @keydown.space="handleKeydown"
   >
-    <div class="flex gap-3">
+    <div class="task-card-inner flex min-w-0 gap-2.5 sm:gap-3">
       <div
-        class="w-1.5 rounded-full"
+        class="task-accent w-1.5 flex-shrink-0 rounded-full"
         :style="{ backgroundColor: courseColors.accent }"
       ></div>
-      <div class="flex-1">
-        <div class="flex flex-wrap items-center gap-2">
+      <div class="task-main min-w-0 flex-1 overflow-hidden">
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
           <span
-            class="pill-badge"
+            class="pill-badge max-w-full"
             :style="{
               backgroundColor: courseColors.badgeBg,
               color: courseColors.badgeText,
@@ -91,47 +91,48 @@ const handleConfirmClick = (event: MouseEvent) => {
         </div>
 
         <div
-          class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+          class="task-content mt-2.5 flex flex-col gap-2.5 sm:mt-4 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
         >
-          <div class="flex flex-1 min-w-0 gap-3">
+          <div class="task-body flex min-w-0 flex-1 gap-2.5 sm:gap-3">
             <div
-              class="min-w-[2.25rem] text-lg font-semibold text-muted-number"
+              class="task-index min-w-[1.5rem] flex-shrink-0 text-sm font-semibold text-muted-number sm:min-w-[2.25rem] sm:text-lg"
             >
               {{ props.task.index }}
             </div>
-            <div class="flex-1 min-w-0 overflow-hidden">
+            <div class="task-body-copy min-w-0 flex-1 overflow-hidden">
               <h3
-                class="line-clamp-2 max-w-full overflow-hidden break-words text-[15px] font-semibold text-[color:var(--color-text-primary)]"
+                class="line-clamp-2 min-w-0 max-w-full overflow-hidden break-words text-[13px] font-semibold leading-[1.35] text-[color:var(--color-text-primary)] sm:text-[15px]"
               >
                 {{ props.task.title }}
               </h3>
-              <p class="mt-1 text-sm text-[color:var(--color-text-secondary)]">
+              <p
+                class="mt-1 break-words text-[11px] text-[color:var(--color-text-secondary)] sm:text-sm"
+              >
                 提出期限: {{ props.task.dueDate }}
               </p>
             </div>
           </div>
 
-          <div class="flex flex-col items-start sm:items-end gap-2 shrink-0">
-            <!-- 1段目: 状態テキスト -->
+          <div
+            class="task-actions ml-auto flex min-w-0 shrink-0 flex-col items-end gap-1.5 sm:gap-2"
+          >
             <AnswerStatusBadge :status="answerStatus" />
 
-            <!-- 2段目: 期限テキスト -->
             <p
               v-if="props.task.warning"
-              class="text-xs sm:text-sm font-semibold text-accent"
+              class="break-words text-right text-[10px] font-semibold text-accent sm:text-sm"
             >
               {{ props.task.warning }}
             </p>
 
-            <!-- 3段目: 「回答を確認」ボタン -->
             <div
               v-if="hasForm"
-              class="mt-0.5 flex flex-col items-start sm:items-end gap-1"
+              class="task-confirm-wrap mt-0.5 flex max-w-full flex-col items-end gap-1"
             >
               <button
                 data-test="confirm-answer"
                 type="button"
-                class="confirm-answer-btn inline-flex w-auto items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold leading-none whitespace-nowrap text-blue-600 transition-colors duration-150 hover:bg-blue-100 hover:text-blue-700 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+                class="confirm-answer-btn inline-flex w-auto max-w-full items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[10px] font-semibold leading-none text-blue-600 transition-colors duration-150 hover:bg-blue-100 hover:text-blue-700 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60 sm:px-3 sm:text-xs"
                 :disabled="isConfirmDisabled"
                 :class="{
                   'is-confirming': props.isConfirming,
@@ -145,7 +146,7 @@ const handleConfirmClick = (event: MouseEvent) => {
               </button>
               <p
                 v-if="confirmationMessage"
-                class="text-xs leading-relaxed text-[color:var(--color-danger)] text-left sm:text-right"
+                class="max-w-full text-left text-[10px] leading-relaxed text-[color:var(--color-danger)] sm:text-right sm:text-xs"
               >
                 {{ confirmationMessage }}
               </p>
@@ -166,10 +167,20 @@ const handleConfirmClick = (event: MouseEvent) => {
   word-break: break-word;
 }
 
+.task-card-inner,
+.task-main,
+.task-content,
+.task-body,
+.task-actions,
+.task-confirm-wrap {
+  min-width: 0;
+}
+
 .confirm-answer-btn {
   display: inline-flex !important;
   width: auto !important;
-  max-width: fit-content !important;
+  max-width: 100% !important;
+  min-height: 2.25rem !important;
   padding: 0.375rem 0.75rem !important;
   font-size: 0.75rem !important;
   line-height: 1 !important;
@@ -180,7 +191,64 @@ const handleConfirmClick = (event: MouseEvent) => {
   color: #2563eb !important;
   cursor: pointer;
   box-shadow: none !important;
-  white-space: nowrap !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 430px) {
+  .card-interactive {
+    padding: 0.75rem !important;
+  }
+
+  .task-card-inner {
+    gap: 0.5rem;
+  }
+
+  .task-accent {
+    width: 0.375rem;
+  }
+
+  .task-content {
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .task-body {
+    gap: 0.625rem;
+  }
+
+  .task-index {
+    min-width: 1.5rem;
+    font-size: 0.875rem;
+  }
+
+  .task-body-copy h3 {
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+
+  .task-body-copy p {
+    font-size: 0.6875rem;
+    line-height: 1.3;
+  }
+
+  .task-actions {
+    width: 100%;
+    align-items: flex-end;
+    gap: 0.5rem;
+  }
+
+  .task-confirm-wrap {
+    width: 100%;
+    align-items: flex-end;
+  }
+
+  .confirm-answer-btn {
+    width: auto !important;
+    min-height: 2.25rem !important;
+    padding: 0.45rem 0.7rem !important;
+    justify-content: center;
+  }
 }
 
 .confirm-answer-btn:hover:not(:disabled) {

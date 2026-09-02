@@ -33,9 +33,18 @@ const textColor = computed(() => {
 
 <template>
   <span
-    class="answer-status-badge text-xs sm:text-sm font-semibold leading-none whitespace-nowrap"
+    class="answer-status-badge max-w-full text-xs font-semibold leading-none sm:text-sm"
     :style="{ color: textColor }"
   >
     {{ label }}
   </span>
 </template>
+
+<style scoped>
+.answer-status-badge {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+</style>
