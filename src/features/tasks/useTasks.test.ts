@@ -1,5 +1,7 @@
 import 'fake-indexeddb/auto'
 
+import { mount } from '@vue/test-utils'
+import { defineComponent, h } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TaskWithFormDatabase } from '../../database/db'
@@ -244,6 +246,117 @@ describe('useTasks', () => {
       ),
     ).toMatchObject({ title: '最新の確認テスト' })
     expect(maxRequestsInFlight).toBe(1)
+  })
+
+  it('serializes syncs across a page unmount and remount', async () => {
+    const firstResponse = deferred<unknown>()
+    const secondResponse = deferred<unknown>()
+    let requestCount = 0
+    let requestsInFlight = 0
+    let maxRequestsInFlight = 0
+    const fetchImplementation = vi.fn(async () => {
+      requestCount += 1
+      requestsInFlight += 1
+      maxRequestsInFlight = Math.max(maxRequestsInFlight, requestsInFlight)
+
+      try {
+        const body = await (requestCount === 1
+          ? firstResponse.promise
+          : secondResponse.promise)
+        return responseFor(body)
+      } finally {
+        requestsInFlight -= 1
+      }
+    }) as unknown as typeof fetch
+    const latestFixture = {
+      courses: [
+        {
+          ...activeCourseListFixture.courses[0]!,
+          courseWork: activeCourseListFixture.courses[0]!.courseWork.map(
+            (courseWork) =>
+              courseWork.courseWorkId === 'work-quiz'
+                ? { ...courseWork, title: '再マウント後の最新課題' }
+                : courseWork,
+          ),
+        },
+        activeCourseListFixture.courses[1]!,
+      ],
+    }
+    let oldResult: ReturnType<typeof useTasks> | undefined
+    let latestResult: ReturnType<typeof useTasks> | undefined
+    const OldPage = defineComponent({
+      setup() {
+        oldResult = useTasks({
+          repository,
+          sync: syncClassroomCourses,
+          fetchImplementation,
+          now: NOW,
+        })
+        return () => h('div')
+      },
+    })
+    const oldWrapper = mount(OldPage)
+
+    expect(oldResult).toBeDefined()
+    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+    oldWrapper.unmount()
+
+    const NewPage = defineComponent({
+      setup() {
+        latestResult = useTasks({
+          repository,
+          sync: syncClassroomCourses,
+          fetchImplementation,
+          now: NOW,
+        })
+        return () => h('div')
+      },
+    })
+    const newWrapper = mount(NewPage)
+
+    expect(latestResult).toBeDefined()
+    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+
+    firstResponse.resolve(activeCourseListFixture)
+    await vi.waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(2))
+
+    secondResponse.resolve(latestFixture)
+    await vi.waitFor(() => expect(latestResult?.status.value).toBe('ready'))
+
+    expect(latestResult?.tasks.value[0]).toMatchObject({
+      title: '再マウント後の最新課題',
+    })
+    expect(
+      (await repository.getAllTasks()).find(
+        (task) => task.courseWorkId === 'work-quiz',
+      ),
+    ).toMatchObject({ title: '再マウント後の最新課題' })
+    expect(maxRequestsInFlight).toBe(1)
+
+    newWrapper.unmount()
+  })
+
+  it('does not block a sync using a different Repository object', async () => {
+    const firstSyncCompletion = deferred<void>()
+    const firstSync = vi.fn(() => firstSyncCompletion.promise)
+    const secondSync = vi.fn().mockResolvedValue(undefined)
+    const firstResult = useTasks({
+      repository: { getUnsubmittedTasks: vi.fn().mockResolvedValue([]) },
+      sync: firstSync,
+      now: NOW,
+    })
+    const secondResult = useTasks({
+      repository: { getUnsubmittedTasks: vi.fn().mockResolvedValue([]) },
+      sync: secondSync,
+      now: NOW,
+    })
+
+    await waitForStatus(secondResult, 'empty')
+    expect(secondSync).toHaveBeenCalledOnce()
+    expect(firstSync).toHaveBeenCalledOnce()
+
+    firstSyncCompletion.resolve()
+    await waitForStatus(firstResult, 'empty')
   })
 
   it('updates a task answer status without changing its UUID', async () => {
