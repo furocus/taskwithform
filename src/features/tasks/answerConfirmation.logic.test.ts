@@ -51,11 +51,22 @@ describe('answer confirmation aggregation', () => {
     })
   })
 
-  it('extracts formId correctly', () => {
-    expect(
-      extractFormId('https://docs.google.com/forms/d/form-abc/viewform'),
-    ).toBe('viewform')
-    expect(extractFormId('https://forms.google.com/form-123')).toBe('form-123')
+  it.each([
+    ['https://docs.google.com/forms/d/form-abc/viewform', 'form-abc'],
+    ['https://docs.google.com/forms/d/form-abc/edit', 'form-abc'],
+    [
+      'https://docs.google.com/forms/d/e/published-abc/viewform',
+      'published-abc',
+    ],
+    [
+      'https://docs.google.com/forms/d/form-abc/viewform/?usp=sharing#responses',
+      'form-abc',
+    ],
+    ['https://forms.google.com/forms/d/form-xyz/viewform', 'form-xyz'],
+    ['https://forms.google.com/form-123', 'form-123'],
+    ['https://forms.google.com/needs-review-form/', 'needs-review-form'],
+  ])('extracts formId from %s', (formUrl, expectedFormId) => {
+    expect(extractFormId(formUrl)).toBe(expectedFormId)
   })
 
   it('fetches GET /api/gmail/forms/:formId/response for each form (Must 1 & 2)', async () => {
@@ -89,5 +100,34 @@ describe('answer confirmation aggregation', () => {
       expect.objectContaining({ method: 'GET' }),
     )
     expect(result.status).toBe('needsReview')
+  })
+
+  it('uses the canonical Form ID and URI-encodes it in the response endpoint', async () => {
+    const fakeFetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ status: 'submitted' }), { status: 200 }),
+    )
+
+    await checkTaskAnswerConfirmation(
+      {
+        taskId: 'task-101',
+        formUrls: [
+          'https://docs.google.com/forms/d/e/published-form/viewform?usp=sharing#x',
+          'form id',
+        ],
+      },
+      fakeFetch as unknown as typeof fetch,
+    )
+
+    expect(fakeFetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/gmail/forms/published-form/response',
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(fakeFetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/gmail/forms/form%20id/response',
+      expect.objectContaining({ method: 'GET' }),
+    )
   })
 })

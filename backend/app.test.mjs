@@ -297,6 +297,54 @@ describe('backend authentication routes', () => {
     expect(response.header('set-cookie')).toContain('Max-Age=0')
   })
 
+  it.each([
+    '/api/classroom/courses/count',
+    '/api/classroom/courses/coursework',
+    '/api/gmail/connection',
+    `/api/gmail/forms/${FORM_ID}/response`,
+  ])('returns session_expired for an expired session at %s', async (url) => {
+    const { sessionCookie } = await completeAuthentication()
+    now = NOW + 60 * 60 * 1000
+
+    const response = await sendRequest(handler, {
+      url,
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'session_expired',
+        message: 'The Google session has expired.',
+      },
+    })
+    expect(response.header('set-cookie')).toContain('Max-Age=0')
+  })
+
+  it.each([
+    '/api/classroom/courses/count',
+    '/api/classroom/courses/coursework',
+    '/api/gmail/connection',
+    `/api/gmail/forms/${FORM_ID}/response`,
+  ])('returns unauthenticated without a session at %s', async (url) => {
+    const response = await sendRequest(handler, { url })
+
+    expect(response.status).toBe(401)
+    expect(response.json()).toEqual({
+      error: {
+        code: 'unauthenticated',
+        message: 'Authentication is required.',
+      },
+    })
+    expect(response.header('set-cookie')).toContain('Max-Age=0')
+    expect(classroomService.countActiveCourses).not.toHaveBeenCalled()
+    expect(
+      classroomService.listActiveCoursesWithCourseWork,
+    ).not.toHaveBeenCalled()
+    expect(gmailService.checkConnection).not.toHaveBeenCalled()
+    expect(gmailService.checkFormResponse).not.toHaveBeenCalled()
+  })
+
   it('rejects a Classroom count request without a session', async () => {
     const response = await sendRequest(handler, {
       url: '/api/classroom/courses/count',
