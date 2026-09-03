@@ -29,6 +29,7 @@ export interface ClassroomCourseWork {
   courseWorkId: string
   courseWorkType: ClassroomCourseWorkType
   title: string
+  submissionStatus: 'unsubmitted' | 'submitted'
   forms: ClassroomCourseWorkForm[]
   description?: string
   alternateLink?: string
@@ -62,6 +63,7 @@ export type ClassroomResponseRejection =
   | 'invalid_course_work'
   | 'duplicate_course_work'
   | 'unknown_course_work_type'
+  | 'invalid_submission_status'
   | 'invalid_due_date'
   | 'invalid_form'
   | 'missing_required_string'
@@ -132,6 +134,17 @@ function readDueDate(value: unknown, status: number): DateOnly | undefined {
   return value
 }
 
+function readSubmissionStatus(
+  value: unknown,
+  status: number,
+): 'unsubmitted' | 'submitted' {
+  if (value === 'unsubmitted' || value === 'submitted') {
+    return value
+  }
+
+  throw invalidResponse(status, 'invalid_submission_status')
+}
+
 function readForm(value: unknown, status: number): ClassroomCourseWorkForm {
   if (!isRecord(value)) {
     throw invalidResponse(status, 'invalid_form')
@@ -152,6 +165,7 @@ function readCourseWork(value: unknown, status: number): ClassroomCourseWork {
     courseWorkId: readRequiredString(value.courseWorkId, status),
     courseWorkType: readCourseWorkType(value.courseWorkType, status),
     title: readRequiredString(value.title, status),
+    submissionStatus: readSubmissionStatus(value.submissionStatus, status),
     forms: value.forms.map((form) => readForm(form, status)),
   }
 

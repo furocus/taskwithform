@@ -1,11 +1,9 @@
 import type {
   CourseTaskSnapshot,
   DateOnly,
-  TaskRecord,
   TaskRecordInput,
 } from '../../database/database.types'
 import {
-  createExternalKey,
   taskRepository as defaultTaskRepository,
   type TaskRepository,
 } from '../../database/task.repository'
@@ -15,9 +13,6 @@ import {
   type ClassroomCourse,
   type ClassroomCourseWork,
 } from './classroom.api'
-
-/** The locally owned part of a task, which a re-sync must not overwrite. */
-export type LocalTaskState = Pick<TaskRecord, 'status' | 'submittedAt'>
 
 type FetchImplementation = typeof fetch
 
@@ -36,7 +31,6 @@ export interface SyncClassroomCoursesResult {
 function toTaskRecordInput(
   course: ClassroomCourse,
   courseWork: ClassroomCourseWork,
-  localState: LocalTaskState | undefined,
 ): TaskRecordInput {
   const input: TaskRecordInput = {
     courseId: course.id,
@@ -48,9 +42,8 @@ function toTaskRecordInput(
     title: courseWork.title,
     // The same Form can be attached twice; one confirmation per URL is enough.
     formUrls: [...new Set(courseWork.forms.map((form) => form.formUrl))],
-    // A task Classroom returns for the first time is unsubmitted until the
-    // user acts on it locally.
-    status: localState?.status ?? 'unsubmitted',
+    // Classroom is the source of truth for whether the task was submitted.
+    status: courseWork.submissionStatus,
   }
 
   if (courseWork.description !== undefined) {
@@ -65,29 +58,18 @@ function toTaskRecordInput(
     input.dueDate = courseWork.dueDate
   }
 
-  if (input.status === 'submitted' && localState?.submittedAt !== undefined) {
-    input.submittedAt = localState.submittedAt
-  }
-
   return input
 }
 
 export function toCourseTaskSnapshot(
   course: ClassroomCourse,
   fetchedDate: DateOnly,
-  localStateByExternalKey: ReadonlyMap<string, LocalTaskState> = new Map(),
 ): CourseTaskSnapshot {
   return {
     courseId: course.id,
     fetchedDate,
     tasks: course.courseWork.map((courseWork) =>
-      toTaskRecordInput(
-        course,
-        courseWork,
-        localStateByExternalKey.get(
-          createExternalKey(course.id, courseWork.courseWorkId),
-        ),
-      ),
+      toTaskRecordInput(course, courseWork),
     ),
   }
 }
@@ -99,9 +81,6 @@ export function toCourseTaskSnapshot(
  * The response is fully validated before the first write, and the writes share
  * one transaction, so neither a malformed response nor a failed write can leave
  * a partially synchronized database behind.
- *
- * Local task state is read before that transaction. Nothing else writes tasks
- * today; a future writer would have to be serialized against this sync.
  */
 export async function syncClassroomCourses({
   fetchImplementation = fetch,
@@ -110,19 +89,9 @@ export async function syncClassroomCourses({
 }: SyncClassroomCoursesOptions = {}): Promise<SyncClassroomCoursesResult> {
   const courses = await getClassroomCourses(fetchImplementation)
 
-  const storedTasks = await repository.getAllTasks()
-  const localStateByExternalKey = new Map<string, LocalTaskState>(
-    storedTasks.map((task) => [
-      task.externalKey,
-      task.submittedAt === undefined
-        ? { status: task.status }
-        : { status: task.status, submittedAt: task.submittedAt },
-    ]),
-  )
-
   const fetchedDate = toDateOnly(now())
   const snapshots = courses.map((course) =>
-    toCourseTaskSnapshot(course, fetchedDate, localStateByExternalKey),
+    toCourseTaskSnapshot(course, fetchedDate),
   )
 
   await repository.replaceActiveCourseSnapshots(snapshots)

@@ -20,6 +20,7 @@ export const activeCourseListFixture: ClassroomCourseListResponse = {
           alternateLink:
             'https://classroom.google.com/c/course-math/a/work-quiz',
           dueDate: '2026-09-04',
+          submissionStatus: 'unsubmitted',
           forms: [
             {
               formId: 'quiz-form-id',
@@ -32,6 +33,7 @@ export const activeCourseListFixture: ClassroomCourseListResponse = {
           courseWorkType: 'ASSIGNMENT',
           title: '前期振り返り',
           dueDate: '2026-09-11',
+          submissionStatus: 'unsubmitted',
           forms: [
             {
               formId: 'review-form-id',
@@ -49,6 +51,7 @@ export const activeCourseListFixture: ClassroomCourseListResponse = {
           courseWorkId: 'work-no-due-date',
           courseWorkType: 'SHORT_ANSWER_QUESTION',
           title: '質問への回答',
+          submissionStatus: 'unsubmitted',
           forms: [],
         },
       ],

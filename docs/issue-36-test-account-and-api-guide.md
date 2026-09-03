@@ -105,6 +105,10 @@ Gmail実装は送信者`forms-receipts-noreply@google.com`とForm IDで候補を
 
 バックエンドは過去のセッションとの互換性のため`classroom.student-submissions.me.readonly`も課題取得scopeとして受け入れますが、現行の認可URLは要求しません。検証用Cloud設定に書き足す必要はありません。
 
+本人の提出・返却・採点状態は、Classroom APIの[`courses.courseWork.studentSubmissions.list`](https://developers.google.com/workspace/classroom/reference/rest/v1/courses.courseWork.studentSubmissions/list)を`courseWorkId=-`、`userId=me`で呼び出して取得します。これは新しいAPI呼び出しですが、現行OAuthで要求済みの`classroom.coursework.me.readonly`に含まれるため、新しいscope、Google Cloud上の追加API有効化、既存利用者の再同意は不要です。古いセッションで必要scopeが付与されていない場合だけ、後述の手順で連携を解除して再ログインします。
+
+取得フィールドは`courseWorkId`、`state`、`assignedGrade`に限定します。提出物の添付ファイル、回答内容、ユーザー情報、Google APIの生レスポンスはアプリAPIへ返さず、課題ごとの`submissionStatus`へ正規化します。
+
 OAuthは`access_type=online`で、リフレッシュトークンを保存しません。アクセストークンとscopeはバックエンドのメモリセッションだけに保持されます。
 
 ### scope変更後に再同意する
@@ -161,12 +165,12 @@ curl --silent --show-error --include \
 
 作業終了時はshellを終了すれば`trap`がCookie jarを削除します。途中で終了する場合は`rm -f -- "$cookie_jar"`を実行してからshellを閉じます。
 
-## 5. `GET /api/classroom/coursework/forms`
+## 5. `GET /api/classroom/courses/coursework`
 
 ### 入力
 
 - Method: `GET`
-- Path: `/api/classroom/coursework/forms`
+- Path: `/api/classroom/courses/coursework`
 - Query/body: なし
 - 認証: `taskwithform.sid` Cookie
 - 必要scope: `classroom.courses.readonly`と、`classroom.coursework.me.readonly`または互換scopeの`classroom.student-submissions.me.readonly`
@@ -174,7 +178,7 @@ curl --silent --show-error --include \
 ```bash
 curl --silent --show-error --include \
   --cookie "$cookie_jar" \
-  http://localhost:3000/api/classroom/coursework/forms
+  http://localhost:3000/api/classroom/courses/coursework
 ```
 
 ### 成功レスポンス
@@ -183,21 +187,26 @@ HTTP `200`で、対象は生徒役が参加する`ACTIVE`コース内の`PUBLISH
 
 ```json
 {
-  "courseWork": [
+  "courses": [
     {
-      "courseId": "test-course-id",
-      "courseName": "検証用コース",
-      "courseWorkId": "test-work-id",
-      "courseWorkType": "ASSIGNMENT",
-      "title": "C3 検証用1 Form",
-      "description": "dummy",
-      "alternateLink": "https://classroom.google.com/c/example/a/example/details",
-      "dueDate": "2026-09-30",
-      "forms": [
+      "id": "test-course-id",
+      "name": "検証用コース",
+      "courseWork": [
         {
-          "formUrl": "https://docs.google.com/forms/d/test-form-id/viewform",
-          "formId": "test-form-id",
-          "formIdType": "standard"
+          "courseWorkId": "test-work-id",
+          "courseWorkType": "ASSIGNMENT",
+          "title": "C3 検証用1 Form",
+          "description": "dummy",
+          "alternateLink": "https://classroom.google.com/c/example/a/example/details",
+          "dueDate": "2026-09-30",
+          "submissionStatus": "unsubmitted",
+          "forms": [
+            {
+              "formUrl": "https://docs.google.com/forms/d/test-form-id/viewform",
+              "formId": "test-form-id",
+              "formIdType": "standard"
+            }
+          ]
         }
       ]
     }
@@ -206,6 +215,21 @@ HTTP `200`で、対象は生徒役が参加する`ACTIVE`コース内の`PUBLISH
 ```
 
 `description`、`alternateLink`、`dueDate`はGoogle側に値がない場合は省略されます。`forms`は常に配列です。`formIdType`は標準URLの`standard`または公開URLの`published`です。`formId`はForms APIのcanonical resource IDではなく、Form URL中のopaque identifierです。
+
+`submissionStatus`はClassroomの本人用`StudentSubmission`から次の規則で正規化します。
+
+- `submitted`: `state`が`TURNED_IN`または`RETURNED`、あるいは`assignedGrade`が存在する
+- `unsubmitted`: `state`が`NEW`、`CREATED`または`RECLAIMED_BY_STUDENT`
+
+期限の有無や添付ファイルの有無は提出判定に使いません。期限なしでも提出済みなら一覧から除外し、ファイルを添付しただけでClassroom上の提出操作をしていない課題は未提出として残します。
+
+未提出のまま期限を過ぎた課題は、メイン課題一覧だけ期限からの経過日数で絞り込みます。判定はローカル暦日で行い、時刻は使いません。
+
+- 期限が今日、未来、または7日前まで: メイン課題一覧に表示する
+- 期限が8日以上前: メイン課題一覧から除外する
+- 期限なし: 経過日数を判定せず常に表示する
+
+この絞り込みはフロントエンドの一覧表示だけに適用します。APIレスポンス、DBのレコード、カレンダー表示、今日締切通知は対象外で、8日以上前の未提出課題もそれらには残ります。
 
 C0の空コースはこのAPIだけではコース要素として現れません。必要なら`GET /api/classroom/courses/count`で`ACTIVE`コース総数を併せて確認し、C0とデータ入りコースの合計件数になっていることを確認します。
 
@@ -335,15 +359,16 @@ HTTP `200`で次のいずれかを返します。
 
 API失敗を回答状態として保存しません。永続化する回答状態は`submitted | unreviewable | needsReview`だけで、`unreviewed`と`reviewing`はUI一時状態です。
 
-| ケース          | Backendの受け渡し                           | DBの扱い                                       | UIの扱い                                        |
-| --------------- | ------------------------------------------- | ---------------------------------------------- | ----------------------------------------------- |
-| C1/C2           | 課題と`forms: []`                           | 課題情報だけを同期                             | Formなしとして表示し、回答確認を呼ばない        |
-| C3/C4           | Formごとの`formId`、`formUrl`、`formIdType` | `taskExternalKey + formId`で識別               | Formごとに表示・確認する                        |
-| G1              | `submitted`と`receiptReceivedAt`            | `checkedAt`とともに保存                        | 回答済みと受信日時を表示                        |
-| G2              | `unreviewable`                              | 正常な確認結果として保存                       | 未提出と断定せず確認不能と表示                  |
-| G3              | `needsReview`                               | 正常な確認結果として保存                       | 要確認と再試行導線を表示                        |
-| APIエラー       | HTTP statusと`error.code`                   | 新しい回答状態を保存せず既存正常値を維持       | `reviewing`を解除し、コード別の安全な案内を表示 |
-| logout/期限切れ | セッション破棄または401                     | 別利用者へ残らないようユーザー固有データを削除 | ログインへ戻し、前利用者の状態を表示しない      |
+| ケース          | Backendの受け渡し                      | DBの扱い                                       | UIの扱い                                        |
+| --------------- | -------------------------------------- | ---------------------------------------------- | ----------------------------------------------- |
+| C1/C2           | 課題、`submissionStatus`、`forms: []`  | 課題情報とClassroom提出状態を同期              | Form回答状態を表示せず、回答確認を呼ばない      |
+| C3/C4           | `submissionStatus`とFormごとの識別情報 | Classroom提出状態とForm回答確認を別々に保持    | 未提出課題だけを表示し、Form回答状態も表示する  |
+| 期限切れ        | 経過日数を返さず`dueDate`だけを返す    | 期限を含む課題レコードをそのまま保持           | メイン一覧は7日前までを表示し8日以上前を除外    |
+| G1              | `submitted`と`receiptReceivedAt`       | `checkedAt`とともに保存                        | 回答済みと受信日時を表示                        |
+| G2              | `unreviewable`                         | 正常な確認結果として保存                       | 未提出と断定せず確認不能と表示                  |
+| G3              | `needsReview`                          | 正常な確認結果として保存                       | 要確認と再試行導線を表示                        |
+| APIエラー       | HTTP statusと`error.code`              | 新しい回答状態を保存せず既存正常値を維持       | `reviewing`を解除し、コード別の安全な案内を表示 |
+| logout/期限切れ | セッション破棄または401                | 別利用者へ残らないようユーザー固有データを削除 | ログインへ戻し、前利用者の状態を表示しない      |
 
 受け渡し時は次を満たします。
 

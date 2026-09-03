@@ -1,7 +1,22 @@
 <script setup lang="ts">
+import { toRaw } from 'vue'
 import { RouterView } from 'vue-router'
 
 import AppHeader from './AppHeader.vue'
+import {
+  provideTaskSyncContext,
+  type TaskSyncContextOptions,
+} from '../features/tasks/taskSyncContext'
+
+const props = defineProps<TaskSyncContextOptions>()
+
+provideTaskSyncContext({
+  repository: props.repository ? toRaw(props.repository) : undefined,
+  sync: props.sync,
+  fetchImplementation: props.fetchImplementation,
+  now: props.now,
+  coalesceReloads: true,
+})
 </script>
 
 <template>

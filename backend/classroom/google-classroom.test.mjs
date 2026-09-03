@@ -156,6 +156,14 @@ describe('Google Classroom service', () => {
           ],
         }),
       )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          studentSubmissions: [
+            { courseWorkId: 'work-1', state: 'NEW' },
+            { courseWorkId: 'work-2', state: 'CREATED' },
+          ],
+        }),
+      )
     const service = createGoogleClassroomService({ fetchImplementation })
 
     await expect(
@@ -172,6 +180,7 @@ describe('Google Classroom service', () => {
             description: 'Google Formに回答してください。',
             alternateLink: 'https://classroom.google.com/example',
             dueDate: '2026-08-09',
+            submissionStatus: 'unsubmitted',
             forms: [
               {
                 formId: 'published-id',
@@ -185,13 +194,14 @@ describe('Google Classroom service', () => {
             courseWorkId: 'work-2',
             courseWorkType: 'ASSIGNMENT',
             title: '資料確認',
+            submissionStatus: 'unsubmitted',
             forms: [],
           },
         ],
       },
     ])
 
-    expect(fetchImplementation).toHaveBeenCalledTimes(3)
+    expect(fetchImplementation).toHaveBeenCalledTimes(4)
     const courseRequestUrl = fetchImplementation.mock.calls[0][0]
     expect(courseRequestUrl.searchParams.get('courseStates')).toBe('ACTIVE')
     expect(courseRequestUrl.searchParams.get('studentId')).toBe('me')
@@ -212,6 +222,270 @@ describe('Google Classroom service', () => {
     expect(
       fetchImplementation.mock.calls[2][0].searchParams.get('pageToken'),
     ).toBe('course-work-page-2')
+    const submissionRequestUrl = fetchImplementation.mock.calls[3][0]
+    expect(submissionRequestUrl.pathname).toBe(
+      '/v1/courses/course%2F1/courseWork/-/studentSubmissions',
+    )
+    expect(submissionRequestUrl.searchParams.get('userId')).toBe('me')
+    expect(submissionRequestUrl.searchParams.get('pageSize')).toBe('100')
+    expect(submissionRequestUrl.searchParams.get('fields')).toBe(
+      'nextPageToken,studentSubmissions(courseWorkId,state,assignedGrade)',
+    )
+  })
+
+  it.each([
+    ['TURNED_IN', 'submitted'],
+    ['RETURNED', 'submitted'],
+    ['NEW', 'unsubmitted'],
+    ['CREATED', 'unsubmitted'],
+    ['RECLAIMED_BY_STUDENT', 'unsubmitted'],
+  ])('normalizes %s to %s', async (state, expectedStatus) => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({
+          courseWork: [
+            { id: 'work-1', title: '確認テスト', workType: 'ASSIGNMENT' },
+          ],
+        })
+      }
+      return createJsonResponse({
+        studentSubmissions: [{ courseWorkId: 'work-1', state }],
+      })
+    })
+
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listActiveCoursesWithCourseWork('access-token'),
+    ).resolves.toMatchObject([
+      {
+        courseWork: [
+          { courseWorkId: 'work-1', submissionStatus: expectedStatus },
+        ],
+      },
+    ])
+  })
+
+  it('uses a valid assigned grade as submitted even when Classroom state is NEW', async () => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({
+          courseWork: [
+            { id: 'work-1', title: '確認テスト', workType: 'ASSIGNMENT' },
+          ],
+        })
+      }
+      return createJsonResponse({
+        studentSubmissions: [
+          { courseWorkId: 'work-1', state: 'NEW', assignedGrade: 0 },
+        ],
+      })
+    })
+
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listActiveCoursesWithCourseWork('access-token'),
+    ).resolves.toMatchObject([
+      {
+        courseWork: [{ courseWorkId: 'work-1', submissionStatus: 'submitted' }],
+      },
+    ])
+  })
+
+  it('paginates student submissions and joins them by courseWorkId', async () => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({
+          courseWork: [
+            { id: 'work-1', title: '一', workType: 'ASSIGNMENT' },
+            { id: 'work-2', title: '二', workType: 'ASSIGNMENT' },
+          ],
+        })
+      }
+      if (requestUrl.searchParams.get('pageToken') === 'submission-page-2') {
+        return createJsonResponse({
+          studentSubmissions: [{ courseWorkId: 'work-2', state: 'RETURNED' }],
+        })
+      }
+      return createJsonResponse({
+        studentSubmissions: [{ courseWorkId: 'work-1', state: 'NEW' }],
+        nextPageToken: 'submission-page-2',
+      })
+    })
+
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listActiveCoursesWithCourseWork('access-token'),
+    ).resolves.toMatchObject([
+      {
+        courseWork: [
+          { courseWorkId: 'work-1', submissionStatus: 'unsubmitted' },
+          { courseWorkId: 'work-2', submissionStatus: 'submitted' },
+        ],
+      },
+    ])
+    expect(fetchImplementation).toHaveBeenCalledTimes(4)
+    const secondPageUrl = fetchImplementation.mock.calls[3][0]
+    expect(secondPageUrl.searchParams.get('pageToken')).toBe(
+      'submission-page-2',
+    )
+    expect(secondPageUrl.searchParams.get('userId')).toBe('me')
+  })
+
+  it.each([
+    [
+      'duplicate submissions',
+      [
+        { courseWorkId: 'work-1', state: 'NEW' },
+        { courseWorkId: 'work-1', state: 'RETURNED' },
+      ],
+    ],
+    ['unknown state', [{ courseWorkId: 'work-1', state: 'DRAFT' }]],
+    ['missing courseWorkId', [{ state: 'NEW' }]],
+    ['malformed submission', [null]],
+    [
+      'negative assigned grade',
+      [{ courseWorkId: 'work-1', state: 'NEW', assignedGrade: -1 }],
+    ],
+    [
+      'non-number assigned grade',
+      [{ courseWorkId: 'work-1', state: 'NEW', assignedGrade: '100' }],
+    ],
+    [
+      'null assigned grade',
+      [{ courseWorkId: 'work-1', state: 'NEW', assignedGrade: null }],
+    ],
+    [
+      'non-finite assigned grade',
+      [{ courseWorkId: 'work-1', state: 'NEW', assignedGrade: Infinity }],
+    ],
+  ])('rejects %s', async (_description, studentSubmissions) => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({
+          courseWork: [
+            { id: 'work-1', title: '確認テスト', workType: 'ASSIGNMENT' },
+          ],
+        })
+      }
+      return createJsonResponse({ studentSubmissions })
+    })
+
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listActiveCoursesWithCourseWork('access-token'),
+    ).rejects.toMatchObject({
+      name: 'ClassroomRequestError',
+      code: 'invalid_response',
+    })
+  })
+
+  it('rejects a published course work with no matching submission', async () => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({
+          courseWork: [
+            { id: 'work-1', title: '確認テスト', workType: 'ASSIGNMENT' },
+          ],
+        })
+      }
+      return createJsonResponse({
+        studentSubmissions: [{ courseWorkId: 'historical-work', state: 'NEW' }],
+      })
+    })
+
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listActiveCoursesWithCourseWork('access-token'),
+    ).rejects.toMatchObject({ code: 'invalid_response' })
+  })
+
+  it('rejects a missing studentSubmissions collection for a published course work', async () => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({
+          courseWork: [
+            { id: 'work-1', title: '確認テスト', workType: 'ASSIGNMENT' },
+          ],
+        })
+      }
+      return createJsonResponse({})
+    })
+
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listActiveCoursesWithCourseWork('access-token'),
+    ).rejects.toMatchObject({ code: 'invalid_response' })
+  })
+
+  it('ignores a well-formed extra submission for historical course work', async () => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({
+          courseWork: [
+            { id: 'work-1', title: '確認テスト', workType: 'ASSIGNMENT' },
+          ],
+        })
+      }
+      return createJsonResponse({
+        studentSubmissions: [
+          { courseWorkId: 'work-1', state: 'NEW' },
+          { courseWorkId: 'historical-work', state: 'RETURNED' },
+        ],
+      })
+    })
+
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listActiveCoursesWithCourseWork('access-token'),
+    ).resolves.toMatchObject([
+      {
+        courseWork: [
+          { courseWorkId: 'work-1', submissionStatus: 'unsubmitted' },
+        ],
+      },
+    ])
   })
 
   it('requests only courses where the current user is a student', async () => {
@@ -233,6 +507,12 @@ describe('Google Classroom service', () => {
 
       if (requestUrl.pathname.includes('teacher-course')) {
         return createJsonResponse({}, 403)
+      }
+
+      if (requestUrl.pathname.includes('studentSubmissions')) {
+        return createJsonResponse({
+          studentSubmissions: [{ courseWorkId: 'work-1', state: 'NEW' }],
+        })
       }
 
       return createJsonResponse({
@@ -258,12 +538,13 @@ describe('Google Classroom service', () => {
             courseWorkId: 'work-1',
             courseWorkType: 'ASSIGNMENT',
             title: '確認テスト',
+            submissionStatus: 'unsubmitted',
             forms: [],
           },
         ],
       },
     ])
-    expect(fetchImplementation).toHaveBeenCalledTimes(2)
+    expect(fetchImplementation).toHaveBeenCalledTimes(3)
     expect(
       fetchImplementation.mock.calls.some(([requestUrl]) =>
         requestUrl.pathname.includes('teacher-course'),
@@ -293,6 +574,12 @@ describe('Google Classroom service', () => {
           ],
         }),
       )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          studentSubmissions: [{ courseWorkId: 'work-1', state: 'NEW' }],
+        }),
+      )
+      .mockResolvedValueOnce(createJsonResponse({}))
       .mockResolvedValueOnce(createJsonResponse({}))
     const service = createGoogleClassroomService({ fetchImplementation })
 
@@ -307,6 +594,7 @@ describe('Google Classroom service', () => {
             courseWorkId: 'work-1',
             courseWorkType: 'ASSIGNMENT',
             title: '確認テスト',
+            submissionStatus: 'unsubmitted',
             forms: [],
           },
         ],

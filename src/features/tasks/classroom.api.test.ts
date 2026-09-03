@@ -31,6 +31,7 @@ describe('parseClassroomCourseList', () => {
               courseWorkId: 'work-1',
               courseWorkType: 'ASSIGNMENT',
               title: '確認テスト',
+              submissionStatus: 'unsubmitted',
               maxPoints: 100,
               forms: [
                 {
@@ -54,6 +55,7 @@ describe('parseClassroomCourseList', () => {
             courseWorkId: 'work-1',
             courseWorkType: 'ASSIGNMENT',
             title: '確認テスト',
+            submissionStatus: 'unsubmitted',
             forms: [
               {
                 formId: 'form-id',
@@ -80,6 +82,7 @@ describe('parseClassroomCourseList', () => {
                 title: '確認テスト',
                 description: '',
                 alternateLink: '',
+                submissionStatus: 'unsubmitted',
                 forms: [],
               },
             ],
@@ -88,6 +91,61 @@ describe('parseClassroomCourseList', () => {
       })[0]?.courseWork[0],
     ).toMatchObject({ description: '', alternateLink: '' })
   })
+
+  it.each(['unsubmitted', 'submitted'])(
+    'accepts normalized submission status %s',
+    (submissionStatus) => {
+      expect(
+        parseClassroomCourseList({
+          courses: [
+            {
+              id: 'course-1',
+              name: '数学',
+              courseWork: [
+                {
+                  courseWorkId: 'work-1',
+                  courseWorkType: 'ASSIGNMENT',
+                  title: '確認テスト',
+                  submissionStatus,
+                  forms: [],
+                },
+              ],
+            },
+          ],
+        })[0]?.courseWork[0]?.submissionStatus,
+      ).toBe(submissionStatus)
+    },
+  )
+
+  it.each([undefined, null, '', 'TURNED_IN', 1])(
+    'rejects an invalid submission status %s with a diagnostic reason',
+    (submissionStatus) => {
+      expect(() =>
+        parseClassroomCourseList({
+          courses: [
+            {
+              id: 'course-1',
+              name: '数学',
+              courseWork: [
+                {
+                  courseWorkId: 'work-1',
+                  courseWorkType: 'ASSIGNMENT',
+                  title: '確認テスト',
+                  submissionStatus,
+                  forms: [],
+                },
+              ],
+            },
+          ],
+        }),
+      ).toThrowError(
+        expect.objectContaining({
+          code: 'invalid_backend_response',
+          reason: 'invalid_submission_status',
+        }),
+      )
+    },
+  )
 
   it.each([
     ['a missing courses field', {}],
@@ -199,6 +257,7 @@ describe('parseClassroomCourseList', () => {
       courseWorkId: 'work-1',
       courseWorkType: 'ASSIGNMENT',
       title: '確認テスト',
+      submissionStatus: 'unsubmitted',
       forms: [],
     }
 
@@ -222,6 +281,7 @@ describe('parseClassroomCourseList', () => {
       courseWorkId: 'work-1',
       courseWorkType: 'ASSIGNMENT',
       title: '確認テスト',
+      submissionStatus: 'unsubmitted',
       forms: [],
     }
 
@@ -268,6 +328,7 @@ describe('parseClassroomCourseList', () => {
                 courseWorkType: 'ASSIGNMENT',
                 title: 'a',
                 dueDate: '2026-02-30',
+                submissionStatus: 'unsubmitted',
                 forms: [],
               },
             ],

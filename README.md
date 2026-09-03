@@ -80,10 +80,12 @@ FRONTEND_ORIGIN=http://localhost:5173
 認証後は次のバックエンドAPIを利用できます。
 
 - `GET /api/classroom/courses/count`: ACTIVEなコースの合計件数
-- `GET /api/classroom/courses/coursework`: ACTIVEなコースごとのPUBLISHEDな課題と、添付されたGoogle FormのURL identifier（`formId`）・形式（`formIdType`）。課題が0件のコースも`courseWork`を空配列として返す
+- `GET /api/classroom/courses/coursework`: ACTIVEなコースごとのPUBLISHEDな課題、本人の提出状況、添付されたGoogle FormのURL identifier（`formId`）・形式（`formIdType`）。課題が0件のコースも`courseWork`を空配列として返す
 - `GET /api/gmail/connection`: Gmail APIへ接続できる場合は`{"connected":true}`
 
 Gmail接続確認ではメール一覧やメール本文を取得しません。`formId`はForms APIのcanonical resource IDではなく、Google Form URL中のopaque identifierです。
+
+本人の提出状況はClassroom APIの`studentSubmissions.list`から取得しますが、現在要求している`classroom.coursework.me.readonly`で利用できるため、追加scopeやGoogle Cloud上の追加API有効化は不要です。取得した状態は`submitted`または`unsubmitted`へ正規化し、提出物の添付ファイルや回答内容はアプリへ取り込みません。
 
 認証情報はバックエンドのメモリ上だけに保持します。アクセストークンの期限切れまたはバックエンドの再起動後は、再ログインが必要です。
 

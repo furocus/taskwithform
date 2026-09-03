@@ -12,6 +12,7 @@ const sampleTask: Task = {
   dueDate: '2026-08-05',
   warning: '2日後',
   answerStatus: 'reviewing',
+  formUrls: ['https://docs.google.com/forms/d/form-id/viewform'],
 }
 
 describe('TaskCard', () => {
@@ -22,7 +23,7 @@ describe('TaskCard', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('確認中')
+    expect(wrapper.text()).toContain('Form回答 確認中')
     expect(wrapper.text()).toContain(
       '長い課題タイトルでも崩れないUIを確認するテスト',
     )
@@ -90,5 +91,6 @@ describe('TaskCard', () => {
     expect(noFormWrapper.find('[data-test="confirm-answer"]').exists()).toBe(
       false,
     )
+    expect(noFormWrapper.find('.answer-status-badge').exists()).toBe(false)
   })
 })

@@ -3,6 +3,7 @@ import {
   getCurrentInstance,
   onUnmounted,
   ref,
+  watch,
   type ComputedRef,
   type Ref,
 } from 'vue'
@@ -17,6 +18,10 @@ import {
   type SyncClassroomCoursesResult,
 } from './classroom.sync'
 import type { AnswerStatus, Task } from './task.types'
+import {
+  useProvidedTaskSyncContext,
+  type TaskSyncContext,
+} from './taskSyncContext'
 
 export type TaskListStatus = 'loading' | 'empty' | 'error' | 'ready'
 
@@ -52,6 +57,7 @@ export interface UseTasksResult {
 }
 
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000
+const MAIN_LIST_MAX_PAST_DAYS = 7
 
 type RepositoryLike =
   Pick<TaskRepository, 'getUnsubmittedTasks'> | TaskRepository
@@ -158,6 +164,21 @@ function formatDueWarning(dueDate: string | undefined, now: Date): string {
   return `あと${remainingDays}日`
 }
 
+function toTaskList(records: readonly TaskRecord[], now: Date): Task[] {
+  const todayMilliseconds = dateOnlyToUtcMilliseconds(toLocalDateOnly(now))
+  const visibleRecords = records.filter((record) => {
+    if (record.dueDate === undefined) return true
+
+    const daysSinceDue = Math.floor(
+      (todayMilliseconds - dateOnlyToUtcMilliseconds(record.dueDate)) /
+        DAY_IN_MILLISECONDS,
+    )
+    return daysSinceDue <= MAIN_LIST_MAX_PAST_DAYS
+  })
+
+  return visibleRecords.map((record, index) => toTask(record, index + 1, now))
+}
+
 export function toTask(record: TaskRecord, index: number, now: Date): Task {
   return {
     id: record.id,
@@ -167,12 +188,15 @@ export function toTask(record: TaskRecord, index: number, now: Date): Task {
     courseId: record.courseId,
     dueDate: formatDueDate(record.dueDate),
     warning: formatDueWarning(record.dueDate, now),
-    answerStatus: record.status === 'submitted' ? 'submitted' : 'unreviewed',
+    // Classroom submission state and Gmail Form answer confirmation are
+    // separate concerns. A task returned here is unsubmitted by Classroom;
+    // its Form response starts as unreviewed until Gmail is checked.
+    answerStatus: 'unreviewed',
     formUrls: [...record.formUrls],
   }
 }
 
-export function useTasks(options: UseTasksOptions = {}): UseTasksResult {
+function useTasksStandalone(options: UseTasksOptions = {}): UseTasksResult {
   const status = ref<TaskListStatus>('loading')
   const tasks = ref<Task[]>([])
   const error = ref<unknown>(null)
@@ -196,10 +220,7 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksResult {
 
       if (disposed || currentRequestId !== requestId) return
 
-      const currentDate = now()
-      tasks.value = records.map((record, index) =>
-        toTask(record, index + 1, currentDate),
-      )
+      tasks.value = toTaskList(records, now())
       status.value = tasks.value.length > 0 ? 'ready' : 'empty'
     } catch (caughtError) {
       if (disposed || currentRequestId !== requestId) return
@@ -279,4 +300,148 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksResult {
     updateTaskAnswerStatus,
     courseId,
   }
+}
+
+/**
+ * Reads tasks from the sync owned by AppLayout. The standalone implementation
+ * above intentionally remains available for unit tests and non-AppLayout
+ * consumers that inject their own sync function.
+ */
+function useTasksFromContext(
+  options: UseTasksOptions,
+  syncContext: TaskSyncContext,
+): UseTasksResult {
+  const status = ref<TaskListStatus>('loading')
+  const tasks = ref<Task[]>([])
+  const error = ref<unknown>(null)
+  const repository: RepositoryLike =
+    options.repository ?? syncContext.repository ?? defaultTaskRepository
+  const now = options.now ?? (() => new Date())
+  let disposed = false
+  let loadedRevision = -1
+  let activeReadRevision = -1
+  let activeRead: Promise<void> | undefined
+
+  const readTasks = (revision: number): Promise<void> => {
+    if (disposed || revision <= loadedRevision) return Promise.resolve()
+    if (activeReadRevision === revision && activeRead) return activeRead
+
+    activeReadRevision = revision
+    status.value = 'loading'
+    tasks.value = []
+    error.value = null
+    const read = repository
+      .getUnsubmittedTasks()
+      .then((records) => {
+        if (disposed || revision !== syncContext.revision.value) return
+
+        tasks.value = toTaskList(records, now())
+        loadedRevision = revision
+        status.value = tasks.value.length > 0 ? 'ready' : 'empty'
+      })
+      .catch((caughtError) => {
+        if (disposed || revision !== syncContext.revision.value) return
+
+        tasks.value = []
+        error.value = caughtError
+        status.value = 'error'
+      })
+
+    const tracked = read.finally(() => {
+      if (activeRead === tracked) {
+        activeRead = undefined
+        activeReadRevision = -1
+      }
+    })
+    activeRead = tracked
+    return tracked
+  }
+
+  const syncStateChanged = (): void => {
+    if (disposed) return
+
+    if (syncContext.status.value === 'error') {
+      tasks.value = []
+      error.value = syncContext.error.value
+      status.value = 'error'
+      return
+    }
+
+    if (syncContext.status.value === 'loading') {
+      status.value = 'loading'
+      tasks.value = []
+      error.value = null
+      return
+    }
+
+    if (syncContext.revision.value > 0) {
+      void readTasks(syncContext.revision.value)
+    }
+  }
+
+  const stop = watch(
+    [syncContext.revision, syncContext.status],
+    syncStateChanged,
+    { immediate: true },
+  )
+
+  const reload = async (): Promise<void> => {
+    if (disposed) return
+
+    const previousRevision = syncContext.revision.value
+    await syncContext.reload()
+    if (disposed) return
+
+    if (syncContext.status.value === 'error') {
+      syncStateChanged()
+      return
+    }
+
+    const revision = syncContext.revision.value
+    if (revision > previousRevision || revision > 0) {
+      await readTasks(revision)
+    }
+  }
+
+  const updateTaskAnswerStatus = (
+    taskId: string,
+    answerStatus: AnswerStatus,
+  ): void => {
+    tasks.value = tasks.value.map((task) =>
+      task.id === taskId ? { ...task, answerStatus } : task,
+    )
+  }
+
+  const courseId = computed(() => tasks.value[0]?.courseId ?? 'default')
+
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      disposed = true
+      stop()
+    })
+  }
+
+  return {
+    status,
+    tasks,
+    error,
+    reload,
+    retry: reload,
+    updateTaskAnswerStatus,
+    courseId,
+  }
+}
+
+export function useTasks(options: UseTasksOptions = {}): UseTasksResult {
+  const providedContext = getCurrentInstance()
+    ? useProvidedTaskSyncContext()
+    : undefined
+
+  // Explicit standalone injection options are primarily test support. In
+  // production AppLayout's provided context owns the one Classroom sync.
+  if (providedContext && !options.sync && !options.syncClassroomCourses) {
+    return useTasksFromContext(options, providedContext)
+  }
+
+  return useTasksStandalone(options)
 }
