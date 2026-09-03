@@ -2,7 +2,7 @@ import type { Task } from '../features/tasks/task.types'
 
 export const mockTasks: Task[] = [
   {
-    id: 1,
+    id: 'mock-task-1',
     index: 1,
     title: 'レポート作成',
     subject: 'デジタル社会と日本の未来',
@@ -13,7 +13,7 @@ export const mockTasks: Task[] = [
     formUrls: [],
   },
   {
-    id: 2,
+    id: 'mock-task-2',
     index: 2,
     title: '課題２５',
     subject: 'アルゴリズム',
@@ -24,7 +24,7 @@ export const mockTasks: Task[] = [
     formUrls: ['https://forms.google.com/needs-review-form'],
   },
   {
-    id: 3,
+    id: 'mock-task-3',
     index: 3,
     title: '７月の課題',
     subject: 'ICT概論',

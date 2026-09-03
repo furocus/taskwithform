@@ -4,7 +4,7 @@ import TaskCard from './TaskCard.vue'
 import type { Task } from '../task.types'
 
 const sampleTask: Task = {
-  id: 1,
+  id: 'task-1',
   index: 1,
   title: '長い課題タイトルでも崩れないUIを確認するテスト',
   subject: '情報技術',
@@ -38,7 +38,7 @@ describe('TaskCard', () => {
     })
 
     await wrapper.get('article[role="button"]').trigger('click')
-    expect(onTaskClick).toHaveBeenCalledWith('1')
+    expect(onTaskClick).toHaveBeenCalledWith('task-1')
   })
 
   it('does not expose button semantics when onTaskClick is not provided', () => {

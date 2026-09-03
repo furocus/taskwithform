@@ -5,7 +5,7 @@ import type { Task } from '../task.types'
 
 const sampleTasks: Task[] = [
   {
-    id: 1,
+    id: 'task-1',
     index: 1,
     title: 'C言語レポート',
     subject: 'C言語',
@@ -112,6 +112,6 @@ describe('TaskList', () => {
 
     await wrapper.get('article[role="button"]').trigger('click')
 
-    expect(onTaskClick).toHaveBeenCalledWith('1')
+    expect(onTaskClick).toHaveBeenCalledWith('task-1')
   })
 })

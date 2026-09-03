@@ -16,9 +16,9 @@ const props = withDefaults(
     courseId?: string
     onRetry?: () => void
     onTaskClick?: (taskId: string) => void
-    onConfirmAnswer?: (taskId: number) => void
-    confirmingTaskId?: number | null
-    confirmationErrors?: Record<number, TaskConfirmationError | null>
+    onConfirmAnswer?: (taskId: string) => void
+    confirmingTaskId?: string | null
+    confirmationErrors?: Record<string, TaskConfirmationError | null>
   }>(),
   {
     status: 'ready',

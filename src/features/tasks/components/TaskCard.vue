@@ -12,7 +12,7 @@ interface ConfirmationErrorLike {
 const props = defineProps<{
   task: Task
   onTaskClick?: (taskId: string) => void
-  onConfirmAnswer?: (taskId: number) => void
+  onConfirmAnswer?: (taskId: string) => void
   isConfirming?: boolean
   confirmationError?: ConfirmationErrorLike | null
 }>()
@@ -46,7 +46,7 @@ const confirmButtonLabel = computed(() => {
 })
 
 const handleClick = () => {
-  props.onTaskClick?.(String(props.task.id))
+  props.onTaskClick?.(props.task.id)
 }
 
 const handleKeydown = (event: KeyboardEvent) => {
