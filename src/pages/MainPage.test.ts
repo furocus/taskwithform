@@ -84,4 +84,135 @@ describe('MainPage', () => {
     )
     expect(wrapper.text()).toContain('回答済み')
   })
+
+  it('confirms one resolved Form and propagates its result to every matching card', async () => {
+    const matchingTasks = ref<Task[]>([
+      {
+        ...createTask(),
+        id: 'task-1',
+        form: {
+          resolution: 'resolved',
+          sourceUrl: 'https://docs.google.com/forms/d/same/viewform',
+          formId: 'same',
+          formUrl: 'https://docs.google.com/forms/d/same/viewform',
+          title: '同じフォーム',
+        },
+        formTitle: '同じフォーム',
+        sourceLabel: '課題',
+      },
+      {
+        ...createTask(),
+        id: 'task-2',
+        form: {
+          resolution: 'resolved',
+          sourceUrl: 'https://docs.google.com/forms/d/same/viewform',
+          formId: 'same',
+          formUrl: 'https://docs.google.com/forms/d/same/viewform',
+          title: '同じフォーム',
+        },
+        formTitle: '同じフォーム',
+        sourceLabel: '資料',
+      },
+    ])
+    const updateTasksAnswerStatusByFormId = vi.fn((formId, status) => {
+      matchingTasks.value = matchingTasks.value.map((task) =>
+        task.form?.resolution === 'resolved' && task.form.formId === formId
+          ? { ...task, answerStatus: status }
+          : task,
+      )
+    })
+    mocks.useTasks.mockReturnValue({
+      status: ref('ready'),
+      tasks: matchingTasks,
+      courseId: ref('course-1'),
+      reload: vi.fn(),
+      error: ref(null),
+      updateTaskAnswerStatus: vi.fn(),
+      updateTasksAnswerStatusByFormId,
+    })
+    mocks.checkTaskAnswerConfirmation.mockResolvedValue({
+      taskId: 'task-1',
+      formResults: [
+        {
+          formUrl: 'https://docs.google.com/forms/d/same/viewform',
+          status: 'submitted',
+        },
+      ],
+      status: 'submitted',
+    })
+
+    const wrapper = mount(MainPage, {
+      global: { stubs: { ClassroomConnectionPanel: true } },
+    })
+    await wrapper
+      .findAll('button[data-test="confirm-answer"]')[0]!
+      .trigger('click')
+    await nextTick()
+
+    expect(mocks.checkTaskAnswerConfirmation).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      formUrls: ['https://docs.google.com/forms/d/same/viewform'],
+    })
+    expect(updateTasksAnswerStatusByFormId).toHaveBeenCalledWith(
+      'same',
+      'submitted',
+    )
+    expect(
+      wrapper
+        .findAll('.answer-status-badge')
+        .every((badge) => badge.text().includes('回答済み')),
+    ).toBe(true)
+  })
+
+  it('does not call Gmail for unresolved Forms and retries the full Classroom reload', async () => {
+    const reload = vi.fn()
+    mocks.checkTaskAnswerConfirmation.mockClear()
+    mocks.useTasks.mockReturnValue({
+      status: ref('ready'),
+      tasks: ref([
+        {
+          ...createTask(),
+          formUrls: [],
+          form: {
+            resolution: 'unresolved',
+            sourceUrl: 'https://forms.gle/broken',
+          },
+        },
+      ]),
+      courseId: ref('course-1'),
+      reload,
+      error: ref(null),
+      updateTaskAnswerStatus: vi.fn(),
+      updateTasksAnswerStatusByFormId: vi.fn(),
+    })
+
+    const wrapper = mount(MainPage, {
+      global: { stubs: { ClassroomConnectionPanel: true } },
+    })
+    expect(wrapper.find('[data-test="confirm-answer"]').exists()).toBe(false)
+    await wrapper.get('[data-test="retry-form-link"]').trigger('click')
+
+    expect(reload).toHaveBeenCalledOnce()
+    expect(mocks.checkTaskAnswerConfirmation).not.toHaveBeenCalled()
+  })
+
+  it('shows a re-authentication action when Classroom scopes are missing', async () => {
+    mocks.useTasks.mockReturnValue({
+      status: ref('error'),
+      tasks: ref([]),
+      courseId: ref('course-1'),
+      reload: vi.fn(),
+      error: ref({ code: 'classroom_scope_missing' }),
+      updateTaskAnswerStatus: vi.fn(),
+      updateTasksAnswerStatusByFormId: vi.fn(),
+    })
+
+    const wrapper = mount(MainPage, {
+      global: { stubs: { ClassroomConnectionPanel: true } },
+    })
+    expect(wrapper.text()).toContain('追加権限が必要')
+    expect(wrapper.get('[data-test="reauthenticate"]').attributes('href')).toBe(
+      '/api/auth/google',
+    )
+  })
 })

@@ -91,6 +91,85 @@ describe('syncClassroomCourses', () => {
     })
   })
 
+  it('stores each distribution item once with structured Forms and skips empty materials', async () => {
+    await syncClassroomCourses({
+      fetchImplementation: createFetch({
+        courses: [
+          {
+            id: 'course-1',
+            name: '数学',
+            items: [
+              {
+                itemId: 'work-1',
+                itemType: 'courseWork',
+                title: '課題',
+                courseWorkType: 'ASSIGNMENT',
+                creationTime: '2026-08-03T00:00:00Z',
+                forms: [],
+              },
+              {
+                itemId: 'material-1',
+                itemType: 'courseWorkMaterial',
+                title: '資料',
+                creationTime: '2026-08-02T00:00:00Z',
+                forms: [
+                  {
+                    resolution: 'unresolved',
+                    sourceUrl: 'https://forms.gle/material',
+                  },
+                ],
+              },
+              {
+                itemId: 'material-2',
+                itemType: 'courseWorkMaterial',
+                title: 'リンクのみ',
+                creationTime: '2026-08-01T00:00:00Z',
+                forms: [],
+              },
+              {
+                itemId: 'announcement-1',
+                itemType: 'announcement',
+                title: '連絡',
+                creationTime: '2026-08-04T00:00:00Z',
+                forms: [
+                  {
+                    resolution: 'resolved',
+                    sourceUrl: 'https://docs.google.com/forms/d/form/viewform',
+                    formId: 'form',
+                    formUrl: 'https://docs.google.com/forms/d/form/viewform',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+      repository,
+      now: NOW,
+    })
+
+    const tasks = await repository.getAllTasks()
+    expect(tasks).toHaveLength(3)
+    expect(
+      tasks
+        .map((task) => [task.itemType, task.itemId])
+        .sort((a, b) => String(a[1]).localeCompare(String(b[1]))),
+    ).toEqual([
+      ['announcement', 'announcement-1'],
+      ['courseWorkMaterial', 'material-1'],
+      ['courseWork', 'work-1'],
+    ])
+    expect(tasks.find((task) => task.itemId === 'material-1')?.forms).toEqual([
+      {
+        resolution: 'unresolved',
+        sourceUrl: 'https://forms.gle/material',
+      },
+    ])
+    expect(
+      tasks.find((task) => task.itemId === 'announcement-1')?.dueDate,
+    ).toBe(undefined)
+  })
+
   it('keeps every Form URL of a task that has more than one Form', async () => {
     await syncClassroomCourses({
       fetchImplementation: createFetch(activeCourseListFixture),

@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRequestHandler } from './app.mjs'
 import {
   GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_ANNOUNCEMENTS_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_COURSEWORK_MATERIALS_READONLY_SCOPE,
   GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
   GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
   GOOGLE_GMAIL_READONLY_SCOPE,
@@ -39,6 +41,7 @@ function createFakeClassroomService(overrides = {}) {
   return {
     countActiveCourses: vi.fn(async () => 3),
     listActiveCoursesWithCourseWork: vi.fn(async () => []),
+    listActiveCoursesWithItems: vi.fn(async () => []),
     ...overrides,
   }
 }
@@ -605,6 +608,119 @@ describe('backend authentication routes', () => {
     expect(
       classroomService.listActiveCoursesWithCourseWork,
     ).not.toHaveBeenCalled()
+  })
+
+  it('returns structured distribution items for an authenticated user', async () => {
+    const courses = [
+      {
+        id: 'course-1',
+        name: '数学',
+        items: [
+          {
+            itemId: 'announcement-1',
+            itemType: 'announcement',
+            title: '連絡',
+            creationTime: '2026-08-01T00:00:00Z',
+            forms: [
+              {
+                resolution: 'unresolved',
+                sourceUrl: 'https://forms.gle/missing',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+    classroomService.listActiveCoursesWithItems.mockResolvedValueOnce(courses)
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/courses/items',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.json()).toEqual({ courses })
+    expect(classroomService.listActiveCoursesWithItems).toHaveBeenCalledWith(
+      'access-token',
+    )
+  })
+
+  it.each([
+    GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+    GOOGLE_CLASSROOM_COURSEWORK_MATERIALS_READONLY_SCOPE,
+    GOOGLE_CLASSROOM_ANNOUNCEMENTS_READONLY_SCOPE,
+  ])(
+    'rejects /items without the required %s scope and does not call Classroom',
+    async (missingScope) => {
+      oauthService.exchangeCode.mockResolvedValueOnce({
+        accessToken: 'access-token',
+        expiresAt: NOW + 60 * 60 * 1000,
+        grantedScopes: GOOGLE_OAUTH_SCOPES.filter(
+          (scope) => scope !== missingScope,
+        ),
+      })
+      const { sessionCookie } = await completeAuthentication()
+
+      const response = await sendRequest(handler, {
+        url: '/api/classroom/courses/items',
+        headers: { cookie: sessionCookie },
+      })
+
+      expect(response.status).toBe(403)
+      expect(response.json()).toMatchObject({
+        error: { code: 'classroom_scope_missing' },
+      })
+      expect(classroomService.listActiveCoursesWithItems).not.toHaveBeenCalled()
+    },
+  )
+
+  it('accepts the canonical student-submissions scope for /items', async () => {
+    oauthService.exchangeCode.mockResolvedValueOnce({
+      accessToken: 'access-token',
+      expiresAt: NOW + 60 * 60 * 1000,
+      grantedScopes: [
+        GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+        GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
+        GOOGLE_CLASSROOM_COURSEWORK_MATERIALS_READONLY_SCOPE,
+        GOOGLE_CLASSROOM_ANNOUNCEMENTS_READONLY_SCOPE,
+      ],
+    })
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/courses/items',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(200)
+    expect(classroomService.listActiveCoursesWithItems).toHaveBeenCalledWith(
+      'access-token',
+    )
+  })
+
+  it('requires a coursework-compatible scope for /items', async () => {
+    oauthService.exchangeCode.mockResolvedValueOnce({
+      accessToken: 'access-token',
+      expiresAt: NOW + 60 * 60 * 1000,
+      grantedScopes: [
+        GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+        GOOGLE_CLASSROOM_COURSEWORK_MATERIALS_READONLY_SCOPE,
+        GOOGLE_CLASSROOM_ANNOUNCEMENTS_READONLY_SCOPE,
+      ],
+    })
+    const { sessionCookie } = await completeAuthentication()
+
+    const response = await sendRequest(handler, {
+      url: '/api/classroom/courses/items',
+      headers: { cookie: sessionCookie },
+    })
+
+    expect(response.status).toBe(403)
+    expect(response.json()).toMatchObject({
+      error: { code: 'classroom_scope_missing' },
+    })
+    expect(classroomService.listActiveCoursesWithItems).not.toHaveBeenCalled()
   })
 
   it('maps a Classroom course work permission error safely', async () => {

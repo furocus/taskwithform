@@ -259,7 +259,7 @@ describe('TaskRepository', () => {
     expect(task?.submittedAt).toBeUndefined()
   })
 
-  it('sorts unsubmitted tasks by due date and puts undated tasks last', async () => {
+  it('sorts unsubmitted tasks by creation time descending', async () => {
     await repository.replaceCourseSnapshot({
       courseId: 'course-1',
       fetchedDate: '2026-07-26',
@@ -267,16 +267,19 @@ describe('TaskRepository', () => {
         createTaskInput({
           courseWorkId: 'undated',
           title: '期限なし',
+          creationTime: '2026-07-29T00:00:00.000Z',
         }),
         createTaskInput({
           courseWorkId: 'later',
           title: '後の課題',
           dueDate: '2026-07-28',
+          creationTime: '2026-07-28T00:00:00.000Z',
         }),
         createTaskInput({
           courseWorkId: 'earlier',
           title: '先の課題',
           dueDate: '2026-07-27',
+          creationTime: '2026-07-27T00:00:00.000Z',
         }),
         createTaskInput({
           courseWorkId: 'submitted',
@@ -290,9 +293,9 @@ describe('TaskRepository', () => {
 
     const tasks = await repository.getUnsubmittedTasks()
     expect(tasks.map((task) => task.courseWorkId)).toEqual([
-      'earlier',
-      'later',
       'undated',
+      'later',
+      'earlier',
     ])
   })
 

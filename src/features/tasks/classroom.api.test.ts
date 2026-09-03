@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { BackendApiError } from '../../shared/api/backendApi'
-import { getClassroomCourses, parseClassroomCourseList } from './classroom.api'
+import {
+  getClassroomCourses,
+  getClassroomItems,
+  parseClassroomCourseList,
+  parseClassroomItemsResponse,
+} from './classroom.api'
 import { activeCourseListFixture } from './classroom.fixtures'
 
 function createJsonResponse(body: unknown, status = 200): Response {
@@ -374,5 +379,96 @@ describe('getClassroomCourses', () => {
     await expect(
       getClassroomCourses(fetchImplementation as unknown as typeof fetch),
     ).rejects.toMatchObject({ code: 'invalid_backend_response' })
+  })
+})
+
+describe('Classroom distribution items', () => {
+  const item = {
+    itemId: 'work-1',
+    itemType: 'courseWork',
+    title: '確認テスト',
+    courseWorkType: 'ASSIGNMENT',
+    creationTime: '2026-08-01T00:00:00Z',
+    forms: [
+      {
+        resolution: 'resolved',
+        sourceUrl: 'https://forms.gle/abc',
+        formId: 'form-1',
+        formUrl: 'https://docs.google.com/forms/d/form-1/viewform',
+        title: '回答フォーム',
+      },
+      {
+        resolution: 'unresolved',
+        sourceUrl: 'https://forms.gle/broken',
+      },
+    ],
+  }
+
+  it('parses structured Forms and keeps mixed distribution item types', () => {
+    const parsed = parseClassroomItemsResponse({
+      courses: [
+        {
+          id: 'course-1',
+          name: '数学',
+          items: [
+            item,
+            {
+              itemId: 'material-1',
+              itemType: 'courseWorkMaterial',
+              title: '資料',
+              creationTime: '2026-08-02T00:00:00+09:00',
+              forms: [item.forms[0]],
+            },
+            {
+              itemId: 'announcement-1',
+              itemType: 'announcement',
+              title: '連絡',
+              creationTime: '2026-08-03T00:00:00Z',
+              forms: [],
+            },
+          ],
+        },
+      ],
+    })
+    expect(parsed[0]?.items[0]?.forms[0]).toEqual(item.forms[0])
+  })
+
+  it.each([
+    {
+      itemId: 'work-1',
+      itemType: 'courseWork',
+      title: '課題',
+      courseWorkType: 'ASSIGNMENT',
+      forms: [],
+    },
+    {
+      itemId: 'work-1',
+      itemType: 'courseWork',
+      title: '課題',
+      courseWorkType: 'ASSIGNMENT',
+      creationTime: 'not-a-time',
+      forms: [],
+    },
+  ])('rejects an item without a valid creationTime', (invalidItem) => {
+    expect(() =>
+      parseClassroomItemsResponse({
+        courses: [{ id: 'course-1', name: '数学', items: [invalidItem] }],
+      }),
+    ).toThrowError(expect.objectContaining({ reason: expect.any(String) }))
+  })
+
+  it('requests GET /api/classroom/courses/items', async () => {
+    const fetchImplementation = vi.fn(async () =>
+      createJsonResponse({
+        courses: [{ id: 'course-1', name: '数学', items: [item] }],
+      }),
+    )
+    await expect(
+      getClassroomItems(fetchImplementation as unknown as typeof fetch),
+    ).resolves.toHaveLength(1)
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      '/api/classroom/courses/items',
+      { credentials: 'same-origin' },
+    )
   })
 })

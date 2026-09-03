@@ -96,7 +96,7 @@ describe('useTasks', () => {
 
     expect(result.status.value).toBe('ready')
     expect(result.error.value).toBeNull()
-    expect(result.tasks.value.map((task) => task.id)).toHaveLength(3)
+    expect(result.tasks.value.map((task) => task.id)).toHaveLength(4)
     expect(result.tasks.value[0]).toMatchObject({
       id: expect.any(String),
       index: 1,
@@ -106,13 +106,15 @@ describe('useTasks', () => {
       warning: 'あと4日',
       answerStatus: 'unreviewed',
     })
-    expect(result.tasks.value.at(-1)).toMatchObject({
+    expect(
+      result.tasks.value.find((task) => task.title === '質問への回答'),
+    ).toMatchObject({
       title: '質問への回答',
       dueDate: '期限なし',
       warning: '',
     })
     expect(fetchImplementation).toHaveBeenCalledWith(
-      '/api/classroom/courses/coursework',
+      '/api/classroom/courses/items',
       { credentials: 'same-origin' },
     )
   })
@@ -124,6 +126,74 @@ describe('useTasks', () => {
     expect(
       toTask(createRecord({ status: 'untracked' }), 1, NOW()),
     ).toMatchObject({ answerStatus: 'unreviewed' })
+  })
+
+  it('splits a structured multi-Form distribution into one visible card per Form', async () => {
+    const record = createRecord({
+      forms: [
+        {
+          resolution: 'resolved',
+          sourceUrl: 'https://docs.google.com/forms/d/form-1/viewform',
+          formId: 'form-1',
+          formUrl: 'https://docs.google.com/forms/d/form-1/viewform',
+          title: 'フォーム1',
+        },
+        {
+          resolution: 'unresolved',
+          sourceUrl: 'https://forms.gle/broken',
+        },
+      ],
+      formUrls: ['https://docs.google.com/forms/d/form-1/viewform'],
+      creationTime: '2026-08-01T00:00:00Z',
+    })
+    const result = useTasks({
+      sync: vi.fn().mockResolvedValue(undefined),
+      repository: { getUnsubmittedTasks: vi.fn().mockResolvedValue([record]) },
+      now: NOW,
+    })
+    await waitForStatus(result, 'ready')
+
+    expect(result.tasks.value).toHaveLength(2)
+    expect(result.tasks.value.map((task) => task.form?.resolution)).toEqual([
+      'resolved',
+      'unresolved',
+    ])
+    expect(result.tasks.value.map((task) => task.id)).toEqual([
+      'task-uuid:form-1',
+      'task-uuid:https://forms.gle/broken',
+    ])
+  })
+
+  it('orders the main task list by creationTime descending with stable tie breakers', async () => {
+    const newest = createRecord({
+      itemId: 'newest',
+      courseWorkId: 'newest',
+      title: '新しい課題',
+      creationTime: '2026-08-03T00:00:00Z',
+      forms: [],
+      formUrls: [],
+    })
+    const oldest = createRecord({
+      itemId: 'oldest',
+      courseWorkId: 'oldest',
+      title: '古い課題',
+      creationTime: '2026-08-01T00:00:00Z',
+      forms: [],
+      formUrls: [],
+    })
+    const result = useTasks({
+      sync: vi.fn().mockResolvedValue(undefined),
+      repository: {
+        getUnsubmittedTasks: vi.fn().mockResolvedValue([oldest, newest]),
+      },
+      now: NOW,
+    })
+    await waitForStatus(result, 'ready')
+
+    expect(result.tasks.value.map((task) => task.title)).toEqual([
+      '新しい課題',
+      '古い課題',
+    ])
   })
 
   it('calculates today and expired warnings from the injected local date', () => {

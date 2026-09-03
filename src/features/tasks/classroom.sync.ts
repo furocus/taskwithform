@@ -1,6 +1,7 @@
 import type {
   CourseTaskSnapshot,
   DateOnly,
+  TaskFormReference,
   TaskRecord,
   TaskRecordInput,
 } from '../../database/database.types'
@@ -11,9 +12,9 @@ import {
 } from '../../database/task.repository'
 import { toDateOnly } from '../../shared/utils/date'
 import {
-  getClassroomCourses,
-  type ClassroomCourse,
-  type ClassroomCourseWork,
+  getClassroomItems,
+  type ClassroomDistributionItem,
+  type ClassroomItemsCourse,
 } from './classroom.api'
 
 /** The locally owned part of a task, which a re-sync must not overwrite. */
@@ -34,35 +35,50 @@ export interface SyncClassroomCoursesResult {
 }
 
 function toTaskRecordInput(
-  course: ClassroomCourse,
-  courseWork: ClassroomCourseWork,
+  course: ClassroomItemsCourse,
+  item: ClassroomDistributionItem,
   localState: LocalTaskState | undefined,
 ): TaskRecordInput {
+  const forms: TaskFormReference[] = item.forms.map((form) => ({ ...form }))
   const input: TaskRecordInput = {
     courseId: course.id,
     courseName: course.name,
-    courseWorkId: courseWork.courseWorkId,
-    courseWorkType: courseWork.courseWorkType,
+    itemType: item.itemType,
+    itemId: item.itemId,
+    creationTime: item.creationTime,
     // Classroom has no separate subject field, so the course name is the subject.
     subjectName: course.name,
-    title: courseWork.title,
-    // The same Form can be attached twice; one confirmation per URL is enough.
-    formUrls: [...new Set(courseWork.forms.map((form) => form.formUrl))],
+    title: item.title,
+    forms,
+    // Keep this projection for answer-confirmation callers that still accept
+    // URL arrays. Unresolved candidates intentionally do not become URLs.
+    formUrls: [
+      ...new Set(
+        forms.flatMap((form) =>
+          form.resolution === 'resolved' ? [form.formUrl] : [],
+        ),
+      ),
+    ],
     // A task Classroom returns for the first time is unsubmitted until the
     // user acts on it locally.
     status: localState?.status ?? 'unsubmitted',
   }
 
-  if (courseWork.description !== undefined) {
-    input.description = courseWork.description
+  if (item.itemType === 'courseWork') {
+    input.courseWorkId = item.itemId
+    input.courseWorkType = item.courseWorkType
   }
 
-  if (courseWork.alternateLink !== undefined) {
-    input.alternateLink = courseWork.alternateLink
+  if (item.description !== undefined) {
+    input.description = item.description
   }
 
-  if (courseWork.dueDate !== undefined) {
-    input.dueDate = courseWork.dueDate
+  if (item.alternateLink !== undefined) {
+    input.alternateLink = item.alternateLink
+  }
+
+  if (item.dueDate !== undefined) {
+    input.dueDate = item.dueDate
   }
 
   if (input.status === 'submitted' && localState?.submittedAt !== undefined) {
@@ -73,22 +89,29 @@ function toTaskRecordInput(
 }
 
 export function toCourseTaskSnapshot(
-  course: ClassroomCourse,
+  course: ClassroomItemsCourse,
   fetchedDate: DateOnly,
   localStateByExternalKey: ReadonlyMap<string, LocalTaskState> = new Map(),
 ): CourseTaskSnapshot {
   return {
     courseId: course.id,
     fetchedDate,
-    tasks: course.courseWork.map((courseWork) =>
-      toTaskRecordInput(
-        course,
-        courseWork,
-        localStateByExternalKey.get(
-          createExternalKey(course.id, courseWork.courseWorkId),
+    tasks: course.items
+      .filter((item) => item.itemType === 'courseWork' || item.forms.length > 0)
+      .map((item) =>
+        toTaskRecordInput(
+          course,
+          item,
+          localStateByExternalKey.get(
+            createExternalKey(course.id, item.itemType, item.itemId),
+          ) ??
+            (item.itemType === 'courseWork'
+              ? localStateByExternalKey.get(
+                  createExternalKey(course.id, item.itemId),
+                )
+              : undefined),
         ),
       ),
-    ),
   }
 }
 
@@ -108,7 +131,7 @@ export async function syncClassroomCourses({
   repository = defaultTaskRepository,
   now = () => new Date(),
 }: SyncClassroomCoursesOptions = {}): Promise<SyncClassroomCoursesResult> {
-  const courses = await getClassroomCourses(fetchImplementation)
+  const courses = await getClassroomItems(fetchImplementation)
 
   const storedTasks = await repository.getAllTasks()
   const localStateByExternalKey = new Map<string, LocalTaskState>(
