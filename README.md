@@ -53,7 +53,7 @@ ClassroomとFormから課題情報を取得し、進捗を管理するWebアプ�
 
 ## Google OAuthを使って動作確認する
 
-Google Classroomのコースと課題、Gmailの接続状態を取得するには、Google CloudでOAuthクライアントを作成し、ローカル環境変数を設定します。
+Google Classroomのコース、課題・資料・ストリーム投稿、Gmailの接続状態を取得するには、Google CloudでOAuthクライアントを作成し、ローカル環境変数を設定します。
 
 1. Google CloudプロジェクトでGoogle Classroom APIを有効にする
 2. 同じプロジェクトでGmail APIを有効にする
@@ -75,12 +75,13 @@ FRONTEND_ORIGIN=http://localhost:5173
 
 `.env`には秘密情報が含まれるためGitへコミットしないでください。
 
-設定後、`./dev up`を実行し、`http://localhost:5173/login`からログインします。許可を求めるGoogle ClassroomとGmailのスコープは読み取り専用です。権限追加前にログイン済みの場合は、一度ログアウトして再ログインしてください。
+設定後、`./dev up`を実行し、`http://localhost:5173/login`からログインします。許可を求めるGoogle ClassroomとGmailのスコープは読み取り専用です。資料・ストリーム投稿用の権限追加前にログイン済みの場合は、一度ログアウトし、Googleアカウント側の既存連携を解除してから再ログインしてください。
 
 認証後は次のバックエンドAPIを利用できます。
 
 - `GET /api/classroom/courses/count`: ACTIVEなコースの合計件数
 - `GET /api/classroom/courses/coursework`: ACTIVEなコースごとのPUBLISHEDな課題と、添付されたGoogle FormのURL identifier（`formId`）・形式（`formIdType`）。課題が0件のコースも`courseWork`を空配列として返す
+- `GET /api/classroom/courses/items`: ACTIVEなコースごとのPUBLISHEDな課題・資料・ストリーム投稿と、添付・リンク・本文から検出したGoogle Form。資料と投稿はFormを含む項目だけを返し、`forms.gle`を解決できない場合は`unresolved`として返す
 - `GET /api/gmail/connection`: Gmail APIへ接続できる場合は`{"connected":true}`
 
 Gmail接続確認ではメール一覧やメール本文を取得しません。`formId`はForms APIのcanonical resource IDではなく、Google Form URL中のopaque identifierです。

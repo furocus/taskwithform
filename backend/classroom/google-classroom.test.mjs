@@ -15,6 +15,15 @@ function createJsonResponse(body, status = 200) {
   }
 }
 
+function createRedirectResponse(location, status = 302) {
+  return {
+    ok: false,
+    status,
+    headers: new Headers({ location }),
+    json: vi.fn(async () => ({})),
+  }
+}
+
 describe('Google Classroom service', () => {
   it.each([
     ['https://docs.google.com/forms/d/form-id/edit', 'form-id'],
@@ -434,5 +443,218 @@ describe('Google Classroom service', () => {
       service.countActiveCourses('access-token'),
     ).rejects.toBeInstanceOf(ClassroomRequestError)
     expect(fetchImplementation).toHaveBeenCalledTimes(2)
+  })
+
+  it('combines published course work, materials, and announcements', async () => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({
+          courseWork: [
+            {
+              id: 'work-1',
+              title: '課題',
+              workType: 'ASSIGNMENT',
+              creationTime: '2026-08-01T00:00:00Z',
+              state: 'PUBLISHED',
+              description: 'https://docs.google.com/forms/d/form-1/viewform',
+            },
+            {
+              id: 'draft',
+              title: '下書き',
+              workType: 'ASSIGNMENT',
+              creationTime: '2026-08-01T00:00:00Z',
+              state: 'DRAFT',
+            },
+          ],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWorkMaterials')) {
+        return createJsonResponse({
+          courseWorkMaterial: [
+            {
+              id: 'material-1',
+              title: '資料',
+              creationTime: '2026-08-02T00:00:00Z',
+              materials: [
+                { link: { url: 'https://forms.gle/material-short' } },
+              ],
+            },
+            {
+              id: 'material-without-form',
+              title: 'リンク',
+              creationTime: '2026-08-02T00:00:00Z',
+              materials: [{ link: { url: 'https://example.test' } }],
+            },
+          ],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/announcements')) {
+        return createJsonResponse({
+          announcements: [
+            {
+              id: 'announcement-1',
+              text: '連絡 https://forms.google.com/d/form-2/viewform',
+              creationTime: '2026-08-03T00:00:00Z',
+            },
+          ],
+        })
+      }
+      if (requestUrl.hostname === 'forms.gle') {
+        return createRedirectResponse(
+          'https://docs.google.com/forms/d/material-form/viewform?usp=sharing',
+        )
+      }
+      throw new Error(`unexpected request: ${requestUrl}`)
+    })
+    const service = createGoogleClassroomService({ fetchImplementation })
+
+    await expect(
+      service.listActiveCoursesWithItems('access-token'),
+    ).resolves.toEqual([
+      {
+        id: 'course-1',
+        name: '数学',
+        items: [
+          {
+            itemId: 'work-1',
+            itemType: 'courseWork',
+            title: '課題',
+            description: 'https://docs.google.com/forms/d/form-1/viewform',
+            creationTime: '2026-08-01T00:00:00Z',
+            courseWorkType: 'ASSIGNMENT',
+            forms: [
+              {
+                resolution: 'resolved',
+                sourceUrl: 'https://docs.google.com/forms/d/form-1/viewform',
+                formId: 'form-1',
+                formUrl: 'https://docs.google.com/forms/d/form-1/viewform',
+              },
+            ],
+          },
+          {
+            itemId: 'material-1',
+            itemType: 'courseWorkMaterial',
+            title: '資料',
+            creationTime: '2026-08-02T00:00:00Z',
+            forms: [
+              {
+                resolution: 'resolved',
+                sourceUrl: 'https://forms.gle/material-short',
+                formId: 'material-form',
+                formUrl:
+                  'https://docs.google.com/forms/d/material-form/viewform',
+              },
+            ],
+          },
+          {
+            itemId: 'announcement-1',
+            itemType: 'announcement',
+            title: '連絡 https://forms.google.com/d/form-2/viewform',
+            description: '連絡 https://forms.google.com/d/form-2/viewform',
+            creationTime: '2026-08-03T00:00:00Z',
+            forms: [
+              {
+                resolution: 'resolved',
+                sourceUrl: 'https://forms.google.com/d/form-2/viewform',
+                formId: 'form-2',
+                formUrl: 'https://forms.google.com/d/form-2/viewform',
+              },
+            ],
+          },
+        ],
+      },
+    ])
+
+    const formCalls = fetchImplementation.mock.calls.filter(
+      ([requestUrl]) => requestUrl.hostname === 'forms.gle',
+    )
+    expect(formCalls).toHaveLength(1)
+    expect(formCalls[0]?.[1]).toEqual(
+      expect.objectContaining({ redirect: 'manual', referrer: '' }),
+    )
+    expect(formCalls[0]?.[1]).not.toHaveProperty('headers.Authorization')
+  })
+
+  it('keeps a short-link candidate unresolved after an unsafe redirect', async () => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({
+          courseWork: [
+            {
+              id: 'work-1',
+              title: '課題',
+              workType: 'ASSIGNMENT',
+              creationTime: '2026-08-01T00:00:00Z',
+              materials: [{ form: { formUrl: 'https://forms.gle/unsafe' } }],
+            },
+          ],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWorkMaterials')) {
+        return createJsonResponse({ courseWorkMaterial: [] })
+      }
+      if (requestUrl.pathname.endsWith('/announcements')) {
+        return createJsonResponse({ announcements: [] })
+      }
+      return createRedirectResponse('https://evil.example/forms/d/id/viewform')
+    })
+
+    await expect(
+      createGoogleClassroomService({
+        fetchImplementation,
+      }).listActiveCoursesWithItems('access-token'),
+    ).resolves.toMatchObject([
+      {
+        items: [
+          {
+            forms: [
+              {
+                resolution: 'unresolved',
+                sourceUrl: 'https://forms.gle/unsafe',
+              },
+            ],
+          },
+        ],
+      },
+    ])
+  })
+
+  it('rejects malformed attached Form data while retaining network failures as unresolved', async () => {
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({
+          courseWork: [
+            {
+              id: 'work-1',
+              title: '課題',
+              workType: 'ASSIGNMENT',
+              creationTime: '2026-08-01T00:00:00Z',
+              materials: [{ form: { formUrl: 'https://forms.example/id' } }],
+            },
+          ],
+        })
+      }
+      return createJsonResponse({ courseWorkMaterial: [], announcements: [] })
+    })
+    await expect(
+      createGoogleClassroomService({
+        fetchImplementation,
+      }).listActiveCoursesWithItems('access-token'),
+    ).rejects.toMatchObject({ code: 'invalid_response' })
   })
 })

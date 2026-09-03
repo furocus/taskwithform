@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import ClassroomConnectionPanel from '../features/auth/components/ClassroomConnectionPanel.vue'
 import { checkTaskAnswerConfirmation } from '../features/tasks/answerConfirmation.api'
 import TaskList from '../features/tasks/components/TaskList.vue'
@@ -10,7 +10,20 @@ type TaskConfirmationError = {
   retryable?: boolean
 }
 
-const { status, tasks, courseId, reload, updateTaskAnswerStatus } = useTasks()
+const {
+  status,
+  tasks,
+  courseId,
+  error,
+  updateTaskAnswerStatus,
+  reload,
+  updateTasksAnswerStatusByFormId,
+} = useTasks()
+const needsReauthentication = computed(
+  () =>
+    (error.value as { code?: unknown } | null)?.code ===
+    'classroom_scope_missing',
+)
 const confirmingTaskId = ref<string | null>(null)
 const confirmationErrors = reactive<
   Record<string, TaskConfirmationError | null>
@@ -18,7 +31,34 @@ const confirmationErrors = reactive<
 
 const handleConfirmAnswer = async (taskId: string) => {
   const task = tasks.value.find((item) => item.id === taskId)
-  if (!task || !task.formUrls || task.formUrls.length === 0) {
+  const legacyFormUrl = task?.formUrls?.[0]
+  const form =
+    task?.form?.resolution === 'resolved'
+      ? task.form
+      : legacyFormUrl === undefined
+        ? undefined
+        : {
+            resolution: 'resolved' as const,
+            sourceUrl: legacyFormUrl,
+            formId: (() => {
+              try {
+                const segments = new URL(legacyFormUrl).pathname
+                  .split('/')
+                  .filter(Boolean)
+                return segments.at(-1) === 'viewform' ||
+                  segments.at(-1) === 'edit'
+                  ? (segments.at(-2) ?? legacyFormUrl)
+                  : (segments.at(-1) ?? legacyFormUrl)
+              } catch {
+                return (
+                  legacyFormUrl.split('/').filter(Boolean).at(-1) ??
+                  legacyFormUrl
+                )
+              }
+            })(),
+            formUrl: legacyFormUrl,
+          }
+  if (!task || form === undefined || !form.formUrl || !form.formId) {
     return
   }
 
@@ -32,10 +72,14 @@ const handleConfirmAnswer = async (taskId: string) => {
   try {
     const result = await checkTaskAnswerConfirmation({
       taskId,
-      formUrls: task.formUrls,
+      formUrls: [form.formUrl],
     })
 
-    updateTaskAnswerStatus(taskId, result.status)
+    if (updateTasksAnswerStatusByFormId !== undefined) {
+      updateTasksAnswerStatusByFormId(form.formId, result.status)
+    } else {
+      updateTaskAnswerStatus?.(taskId, result.status)
+    }
   } catch (error) {
     const confirmationError = error as { code?: string; retryable?: boolean }
     confirmationErrors[taskId] = {
@@ -52,6 +96,20 @@ const handleConfirmAnswer = async (taskId: string) => {
 
 <template>
   <section class="space-y-5">
+    <div
+      v-if="needsReauthentication"
+      role="alert"
+      class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900"
+    >
+      Classroomの追加権限が必要です。Googleに再ログインして権限を許可してください。
+      <a
+        data-test="reauthenticate"
+        href="/api/auth/google"
+        class="ml-2 font-semibold underline"
+      >
+        再ログイン
+      </a>
+    </div>
     <TaskList
       :status="status"
       :tasks="tasks"

@@ -6,7 +6,10 @@ import {
   type ComputedRef,
   type Ref,
 } from 'vue'
-import type { TaskRecord } from '../../database/database.types'
+import type {
+  TaskFormReference,
+  TaskRecord,
+} from '../../database/database.types'
 import {
   taskRepository as defaultTaskRepository,
   type TaskRepository,
@@ -47,6 +50,11 @@ export interface UseTasksResult {
   retry: () => Promise<void>
   /** Updates only the answer status of a currently displayed task. */
   updateTaskAnswerStatus: (taskId: string, answerStatus: AnswerStatus) => void
+  /** Updates every visible card that refers to this exact resolved Form ID. */
+  updateTasksAnswerStatusByFormId: (
+    formId: string,
+    answerStatus: AnswerStatus,
+  ) => void
   /** A stable course id for consumers that need a fallback course color. */
   courseId: ComputedRef<string>
 }
@@ -158,18 +166,87 @@ function formatDueWarning(dueDate: string | undefined, now: Date): string {
   return `あと${remainingDays}日`
 }
 
+function compareMainTasks(a: TaskRecord, b: TaskRecord): number {
+  const aTime =
+    a.creationTime === undefined ? -Infinity : Date.parse(a.creationTime)
+  const bTime =
+    b.creationTime === undefined ? -Infinity : Date.parse(b.creationTime)
+  if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+    return bTime - aTime
+  }
+  const titleOrder = a.title.localeCompare(b.title, 'ja')
+  if (titleOrder !== 0) return titleOrder
+  const courseOrder = a.courseName.localeCompare(b.courseName, 'ja')
+  if (courseOrder !== 0) return courseOrder
+  return (a.itemId ?? a.courseWorkId ?? '').localeCompare(
+    b.itemId ?? b.courseWorkId ?? '',
+  )
+}
+
 export function toTask(record: TaskRecord, index: number, now: Date): Task {
+  return toTaskForForm(record, index, now)
+}
+
+function toTaskForForm(
+  record: TaskRecord,
+  index: number,
+  now: Date,
+  form?: TaskFormReference,
+): Task {
+  const formUrls =
+    form?.resolution === 'resolved'
+      ? [form.formUrl]
+      : form === undefined
+        ? [...(record.formUrls ?? [])]
+        : []
+  const sourceLabel =
+    record.itemType === 'courseWorkMaterial'
+      ? '資料'
+      : record.itemType === 'announcement'
+        ? 'ストリーム'
+        : '課題'
   return {
-    id: record.id,
+    id:
+      form === undefined
+        ? record.id
+        : `${record.id}:${form.resolution === 'resolved' ? form.formId : form.sourceUrl}`,
     index,
     title: record.title,
+    distributionTitle: record.title,
+    formTitle:
+      form === undefined
+        ? undefined
+        : form.title && form.title.trim() !== ''
+          ? form.title
+          : record.title && record.title.trim() !== ''
+            ? record.title
+            : 'Google Form',
+    sourceLabel,
     subject: record.subjectName,
     courseId: record.courseId,
+    itemType: record.itemType,
+    itemId: record.itemId,
+    creationTime: record.creationTime,
     dueDate: formatDueDate(record.dueDate),
     warning: formatDueWarning(record.dueDate, now),
     answerStatus: record.status === 'submitted' ? 'submitted' : 'unreviewed',
-    formUrls: [...record.formUrls],
+    formUrls,
+    ...(form === undefined ? {} : { form }),
   }
+}
+
+function toVisibleTasks(record: TaskRecord, index: number, now: Date): Task[] {
+  // Pre-v3 callers may still provide only formUrls. Keep that legacy record
+  // as one card; records written by the v3 sync always have structured refs
+  // and are intentionally flat-mapped below.
+  if (record.forms === undefined) {
+    return [toTaskForForm(record, index, now)]
+  }
+  const forms = record.forms
+  if (forms.length === 0) return [toTaskForForm(record, index, now)]
+  return forms.map((form, formIndex) =>
+    toTaskForForm(record, index + formIndex, now, form),
+  )
 }
 
 export function useTasks(options: UseTasksOptions = {}): UseTasksResult {
@@ -197,9 +274,13 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksResult {
       if (disposed || currentRequestId !== requestId) return
 
       const currentDate = now()
-      tasks.value = records.map((record, index) =>
-        toTask(record, index + 1, currentDate),
-      )
+      let displayIndex = 1
+      const orderedRecords = [...records].sort(compareMainTasks)
+      tasks.value = orderedRecords.flatMap((record) => {
+        const visible = toVisibleTasks(record, displayIndex, currentDate)
+        displayIndex += visible.length
+        return visible
+      })
       status.value = tasks.value.length > 0 ? 'ready' : 'empty'
     } catch (caughtError) {
       if (disposed || currentRequestId !== requestId) return
@@ -256,6 +337,17 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksResult {
     )
   }
 
+  const updateTasksAnswerStatusByFormId = (
+    formId: string,
+    answerStatus: AnswerStatus,
+  ): void => {
+    tasks.value = tasks.value.map((task) =>
+      task.form?.resolution === 'resolved' && task.form.formId === formId
+        ? { ...task, answerStatus }
+        : task,
+    )
+  }
+
   const courseId = computed(() => tasks.value[0]?.courseId ?? 'default')
 
   if (getCurrentInstance()) {
@@ -277,6 +369,7 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksResult {
     reload,
     retry: reload,
     updateTaskAnswerStatus,
+    updateTasksAnswerStatusByFormId,
     courseId,
   }
 }
