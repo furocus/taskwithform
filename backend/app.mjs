@@ -217,6 +217,53 @@ export function createRequestHandler({
     return parseCookies(request.headers.cookie)[SESSION_COOKIE_NAME]
   }
 
+  function readAuthentication(request) {
+    const sessionId = readSessionId(request)
+    if (sessionId === undefined) {
+      return { status: 'unauthenticated', sessionId }
+    }
+
+    return {
+      sessionId,
+      ...sessionStore.getAuthenticatedResult(sessionId),
+    }
+  }
+
+  function sendAuthenticationError(response, status) {
+    const isExpired = status === 'expired'
+    sendJson(
+      response,
+      401,
+      {
+        error: isExpired
+          ? {
+              code: 'session_expired',
+              message: 'The Google session has expired.',
+            }
+          : {
+              code: 'unauthenticated',
+              message: 'Authentication is required.',
+            },
+      },
+      { 'Set-Cookie': clearSessionCookie(secureCookie) },
+    )
+  }
+
+  function requireAuthentication(request, response) {
+    const authentication = readAuthentication(request)
+    if (authentication.status !== 'authenticated') {
+      sendAuthenticationError(response, authentication.status)
+      return undefined
+    }
+
+    return authentication
+  }
+
+  function sendSessionExpired(response, sessionId) {
+    sessionStore.delete(sessionId)
+    sendAuthenticationError(response, 'expired')
+  }
+
   return async function handleRequest(request, response) {
     try {
       const requestUrl = new URL(request.url ?? '/', 'http://localhost')
@@ -349,13 +396,9 @@ export function createRequestHandler({
         request.method === 'GET' &&
         requestUrl.pathname === '/api/auth/session'
       ) {
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
+        const authentication = readAuthentication(request)
 
-        if (session === undefined) {
+        if (authentication.status !== 'authenticated') {
           sendJson(
             response,
             200,
@@ -367,7 +410,7 @@ export function createRequestHandler({
 
         sendJson(response, 200, {
           authenticated: true,
-          expiresAt: new Date(session.expiresAt).toISOString(),
+          expiresAt: new Date(authentication.session.expiresAt).toISOString(),
         })
         return
       }
@@ -376,26 +419,11 @@ export function createRequestHandler({
         request.method === 'GET' &&
         requestUrl.pathname === '/api/classroom/courses/count'
       ) {
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
-
-        if (session === undefined) {
-          sendJson(
-            response,
-            401,
-            {
-              error: {
-                code: 'unauthenticated',
-                message: 'Authentication is required.',
-              },
-            },
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
+        const authentication = requireAuthentication(request, response)
+        if (authentication === undefined) {
           return
         }
+        const { sessionId, session } = authentication
 
         if (
           !hasRequiredScopes(session, [GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE])
@@ -415,18 +443,7 @@ export function createRequestHandler({
           sendJson(response, 200, { count })
         } catch (error) {
           if (error instanceof ClassroomRequestError && error.status === 401) {
-            sessionStore.delete(sessionId)
-            sendJson(
-              response,
-              401,
-              {
-                error: {
-                  code: 'session_expired',
-                  message: 'The Google session has expired.',
-                },
-              },
-              { 'Set-Cookie': clearSessionCookie(secureCookie) },
-            )
+            sendSessionExpired(response, sessionId)
             return
           }
 
@@ -459,26 +476,11 @@ export function createRequestHandler({
         request.method === 'GET' &&
         requestUrl.pathname === '/api/classroom/courses/coursework'
       ) {
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
-
-        if (session === undefined) {
-          sendJson(
-            response,
-            401,
-            {
-              error: {
-                code: 'unauthenticated',
-                message: 'Authentication is required.',
-              },
-            },
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
+        const authentication = requireAuthentication(request, response)
+        if (authentication === undefined) {
           return
         }
+        const { sessionId, session } = authentication
 
         if (
           !hasRequiredScopes(session, [
@@ -505,18 +507,7 @@ export function createRequestHandler({
           sendJson(response, 200, { courses })
         } catch (error) {
           if (error instanceof ClassroomRequestError && error.status === 401) {
-            sessionStore.delete(sessionId)
-            sendJson(
-              response,
-              401,
-              {
-                error: {
-                  code: 'session_expired',
-                  message: 'The Google session has expired.',
-                },
-              },
-              { 'Set-Cookie': clearSessionCookie(secureCookie) },
-            )
+            sendSessionExpired(response, sessionId)
             return
           }
 
@@ -549,26 +540,11 @@ export function createRequestHandler({
         request.method === 'GET' &&
         requestUrl.pathname === '/api/gmail/connection'
       ) {
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
-
-        if (session === undefined) {
-          sendJson(
-            response,
-            401,
-            {
-              error: {
-                code: 'unauthenticated',
-                message: 'Authentication is required.',
-              },
-            },
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
+        const authentication = requireAuthentication(request, response)
+        if (authentication === undefined) {
           return
         }
+        const { sessionId, session } = authentication
 
         if (!hasRequiredScopes(session, [GOOGLE_GMAIL_READONLY_SCOPE])) {
           sendScopeForbidden(
@@ -584,18 +560,7 @@ export function createRequestHandler({
           sendJson(response, 200, { connected: true })
         } catch (error) {
           if (error instanceof GmailRequestError && error.status === 401) {
-            sessionStore.delete(sessionId)
-            sendJson(
-              response,
-              401,
-              {
-                error: {
-                  code: 'session_expired',
-                  message: 'The Google session has expired.',
-                },
-              },
-              { 'Set-Cookie': clearSessionCookie(secureCookie) },
-            )
+            sendSessionExpired(response, sessionId)
             return
           }
 
@@ -645,26 +610,11 @@ export function createRequestHandler({
           ? readGmailFormResponseId(requestUrl)
           : undefined
       if (gmailFormResponseId !== undefined && gmailFormResponseId !== null) {
-        const sessionId = readSessionId(request)
-        const session =
-          sessionId === undefined
-            ? undefined
-            : sessionStore.getAuthenticated(sessionId)
-
-        if (session === undefined) {
-          sendJson(
-            response,
-            401,
-            {
-              error: {
-                code: 'unauthenticated',
-                message: 'Authentication is required.',
-              },
-            },
-            { 'Set-Cookie': clearSessionCookie(secureCookie) },
-          )
+        const authentication = requireAuthentication(request, response)
+        if (authentication === undefined) {
           return
         }
+        const { sessionId, session } = authentication
 
         if (!hasRequiredScopes(session, [GOOGLE_GMAIL_READONLY_SCOPE])) {
           sendScopeForbidden(
@@ -706,18 +656,7 @@ export function createRequestHandler({
           }
 
           if (error instanceof GmailRequestError && error.status === 401) {
-            sessionStore.delete(sessionId)
-            sendJson(
-              response,
-              401,
-              {
-                error: {
-                  code: 'session_expired',
-                  message: 'The Google session has expired.',
-                },
-              },
-              { 'Set-Cookie': clearSessionCookie(secureCookie) },
-            )
+            sendSessionExpired(response, sessionId)
             return
           }
 

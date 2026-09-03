@@ -73,14 +73,24 @@ export class MemorySessionStore {
   }
 
   getAuthenticated(sessionId) {
+    const result = this.getAuthenticatedResult(sessionId)
+    return result.status === 'authenticated' ? result.session : undefined
+  }
+
+  getAuthenticatedResult(sessionId) {
     const session = this.sessions.get(sessionId)
 
-    if (session?.kind !== 'authenticated' || session.expiresAt <= this.now()) {
+    if (session?.kind !== 'authenticated') {
       this.sessions.delete(sessionId)
-      return undefined
+      return { status: 'unauthenticated' }
     }
 
-    return session
+    if (session.expiresAt <= this.now()) {
+      this.sessions.delete(sessionId)
+      return { status: 'expired' }
+    }
+
+    return { status: 'authenticated', session }
   }
 
   delete(sessionId) {

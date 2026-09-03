@@ -60,8 +60,38 @@ export function extractFormId(formUrl: string): string {
   try {
     const url = new URL(formUrl)
     const segments = url.pathname.split('/').filter(Boolean)
+
+    // Google Forms' canonical URLs use an action name (viewform/edit) as the
+    // final path segment. The backend contract needs the opaque ID instead.
+    if (
+      url.hostname === 'docs.google.com' ||
+      url.hostname === 'forms.google.com'
+    ) {
+      const formsIndex = segments.indexOf('forms')
+      if (segments[formsIndex + 1] === 'd') {
+        let idIndex = formsIndex + 2
+        if (segments[idIndex] === 'e') {
+          idIndex += 1
+        }
+
+        const formId = segments[idIndex]
+        const action = segments[idIndex + 1]
+        if (
+          formId !== undefined &&
+          segments.length === idIndex + 2 &&
+          (action === 'viewform' || action === 'edit')
+        ) {
+          return formId
+        }
+      }
+    }
+
     if (segments.length > 0) {
-      return segments[segments.length - 1]!
+      try {
+        return decodeURIComponent(segments[segments.length - 1]!)
+      } catch {
+        return segments[segments.length - 1]!
+      }
     }
   } catch {
     // not a valid URL, fall back to string manipulation
