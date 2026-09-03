@@ -53,6 +53,78 @@ export interface UseTasksResult {
 
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000
 
+type RepositoryLike =
+  Pick<TaskRepository, 'getUnsubmittedTasks'> | TaskRepository
+
+interface RepositoryQueueJob {
+  run: () => Promise<void>
+  shouldSkip: () => boolean
+  resolve: () => void
+}
+
+interface RepositoryQueue {
+  running: boolean
+  pending: RepositoryQueueJob[]
+}
+
+// A Repository is the serialization boundary for the writes performed by a
+// Classroom sync. Sharing this queue across composable instances also covers
+// a page unmount/remount while an earlier sync is still in flight.
+const repositoryQueues = new WeakMap<object, RepositoryQueue>()
+
+function getRepositoryQueue(repository: RepositoryLike): RepositoryQueue {
+  const key = repository as object
+  const existingQueue = repositoryQueues.get(key)
+  if (existingQueue) return existingQueue
+
+  const queue: RepositoryQueue = { running: false, pending: [] }
+  repositoryQueues.set(key, queue)
+  return queue
+}
+
+function pumpRepositoryQueue(queue: RepositoryQueue): void {
+  if (queue.running) return
+
+  while (queue.pending.length > 0) {
+    const job = queue.pending.shift()!
+    if (job.shouldSkip()) {
+      job.resolve()
+      continue
+    }
+
+    queue.running = true
+    let execution: Promise<void>
+    try {
+      execution = job.run()
+    } catch {
+      execution = Promise.resolve()
+    }
+
+    // The composable handles expected failures in execute. Keep this queue
+    // alive even if an injected implementation unexpectedly rejects.
+    void execution
+      .catch(() => undefined)
+      .finally(() => {
+        queue.running = false
+        job.resolve()
+        pumpRepositoryQueue(queue)
+      })
+    return
+  }
+}
+
+function enqueueRepositoryJob(
+  repository: RepositoryLike,
+  run: () => Promise<void>,
+  shouldSkip: () => boolean,
+): Promise<void> {
+  const queue = getRepositoryQueue(repository)
+  return new Promise<void>((resolve) => {
+    queue.pending.push({ run, shouldSkip, resolve })
+    pumpRepositoryQueue(queue)
+  })
+}
+
 function formatDueDate(dueDate: string | undefined): string {
   if (dueDate === undefined) return '期限なし'
 
@@ -104,7 +176,7 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksResult {
   const status = ref<TaskListStatus>('loading')
   const tasks = ref<Task[]>([])
   const error = ref<unknown>(null)
-  const repository = options.repository ?? defaultTaskRepository
+  const repository: RepositoryLike = options.repository ?? defaultTaskRepository
   const sync =
     options.sync ?? options.syncClassroomCourses ?? defaultSyncClassroomCourses
   const now = options.now ?? (() => new Date())
@@ -148,7 +220,11 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksResult {
     const currentRequestId = requestId
     requestRunning = true
 
-    void execute(currentRequestId).finally(() => {
+    void enqueueRepositoryJob(
+      repository,
+      () => execute(currentRequestId),
+      () => disposed || currentRequestId !== requestId,
+    ).finally(() => {
       requestRunning = false
       waiters.forEach((resolve) => resolve())
       pumpReloads()
