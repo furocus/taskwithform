@@ -296,6 +296,33 @@ describe('TaskRepository', () => {
     ])
   })
 
+  it('excludes submitted undated tasks while retaining overdue and undated unsubmitted tasks', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-26',
+      tasks: [
+        createTaskInput({
+          courseWorkId: 'submitted-undated',
+          title: '提出済み・期限なし',
+          status: 'submitted',
+        }),
+        createTaskInput({
+          courseWorkId: 'overdue',
+          title: '期限切れ',
+          dueDate: '2026-07-25',
+        }),
+        createTaskInput({
+          courseWorkId: 'unsubmitted-undated',
+          title: '未提出・期限なし',
+        }),
+      ],
+    })
+
+    expect(
+      (await repository.getUnsubmittedTasks()).map((task) => task.courseWorkId),
+    ).toEqual(['overdue', 'unsubmitted-undated'])
+  })
+
   it('returns only unsubmitted dated tasks inside the calendar range', async () => {
     await repository.replaceCourseSnapshot({
       courseId: 'course-1',

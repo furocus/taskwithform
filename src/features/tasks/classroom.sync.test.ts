@@ -126,9 +126,19 @@ describe('syncClassroomCourses', () => {
     })
   })
 
-  it('keeps the internal UUID and the local status when a course is synced again', async () => {
+  it('uses Classroom submission status on resync while preserving UUID and clearing stale submittedAt', async () => {
+    const submittedFixture = {
+      courses: activeCourseListFixture.courses.map((course) => ({
+        ...course,
+        courseWork: course.courseWork.map((courseWork) =>
+          courseWork.courseWorkId === 'work-quiz'
+            ? { ...courseWork, submissionStatus: 'submitted' as const }
+            : courseWork,
+        ),
+      })),
+    }
     await syncClassroomCourses({
-      fetchImplementation: createFetch(activeCourseListFixture),
+      fetchImplementation: createFetch(submittedFixture),
       repository,
       now: NOW,
     })
@@ -142,18 +152,14 @@ describe('syncClassroomCourses', () => {
     })
 
     const renamedFixture = {
-      courses: [
-        {
-          ...activeCourseListFixture.courses[0],
-          courseWork: activeCourseListFixture.courses[0]!.courseWork.map(
-            (courseWork) =>
-              courseWork.courseWorkId === 'work-quiz'
-                ? { ...courseWork, title: '確認テスト（再提出）' }
-                : courseWork,
-          ),
-        },
-        activeCourseListFixture.courses[1],
-      ],
+      courses: activeCourseListFixture.courses.map((course) => ({
+        ...course,
+        courseWork: course.courseWork.map((courseWork) =>
+          courseWork.courseWorkId === 'work-quiz'
+            ? { ...courseWork, title: '確認テスト（再提出）' }
+            : courseWork,
+        ),
+      })),
     }
 
     await syncClassroomCourses({
@@ -169,9 +175,11 @@ describe('syncClassroomCourses', () => {
     ).toMatchObject({
       id: targetTask!.id,
       title: '確認テスト（再提出）',
-      status: 'submitted',
-      submittedAt: '2026-08-30T09:00:00.000Z',
+      status: 'unsubmitted',
     })
+    expect(
+      tasks.find((task) => task.courseWorkId === 'work-quiz'),
+    ).not.toHaveProperty('submittedAt')
     expect(await repository.getSyncStates()).toEqual([
       { courseId: 'course-empty', fetchedDate: '2026-09-01' },
       { courseId: 'course-math', fetchedDate: '2026-09-01' },
@@ -323,6 +331,7 @@ describe('syncClassroomCourses', () => {
                 courseWorkId: 'work-1',
                 courseWorkType: 'ASSIGNMENT',
                 title: '確認テスト',
+                submissionStatus: 'unsubmitted',
                 description: '',
                 forms: [
                   {

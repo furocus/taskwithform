@@ -3,7 +3,15 @@ import { isValidGoogleFormId } from '../google-form-id.mjs'
 const CLASSROOM_COURSES_URL = 'https://classroom.googleapis.com/v1/courses'
 const COURSE_PAGE_SIZE = '100'
 const COURSE_WORK_PAGE_SIZE = '100'
+const STUDENT_SUBMISSION_PAGE_SIZE = '100'
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
+const STUDENT_SUBMISSION_STATES = new Set([
+  'TURNED_IN',
+  'RETURNED',
+  'NEW',
+  'CREATED',
+  'RECLAIMED_BY_STUDENT',
+])
 
 export class ClassroomRequestError extends Error {
   constructor(code, { status, cause } = {}) {
@@ -248,6 +256,47 @@ function mapCourseWork(courseWork) {
   return mapped
 }
 
+function readStudentSubmission(submission) {
+  if (
+    submission === null ||
+    typeof submission !== 'object' ||
+    Array.isArray(submission)
+  ) {
+    throw new ClassroomRequestError('invalid_response')
+  }
+
+  const courseWorkId = readRequiredString(submission.courseWorkId)
+  if (
+    typeof submission.state !== 'string' ||
+    !STUDENT_SUBMISSION_STATES.has(submission.state)
+  ) {
+    throw new ClassroomRequestError('invalid_response')
+  }
+
+  if (
+    submission.assignedGrade !== undefined &&
+    (typeof submission.assignedGrade !== 'number' ||
+      !Number.isFinite(submission.assignedGrade) ||
+      submission.assignedGrade < 0)
+  ) {
+    throw new ClassroomRequestError('invalid_response')
+  }
+
+  return {
+    courseWorkId,
+    state: submission.state,
+    assignedGrade: submission.assignedGrade,
+  }
+}
+
+function normalizeSubmissionStatus(submission) {
+  return submission.state === 'TURNED_IN' ||
+    submission.state === 'RETURNED' ||
+    submission.assignedGrade !== undefined
+    ? 'submitted'
+    : 'unsubmitted'
+}
+
 export function createGoogleClassroomService({
   fetchImplementation = fetch,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
@@ -333,12 +382,60 @@ export function createGoogleClassroomService({
           },
         })
 
+        const mappedCourseWorkItems = courseWorkItems.map(mapCourseWork)
+        const submissionsUrl = new URL(
+          `${CLASSROOM_COURSES_URL}/${encodeURIComponent(normalizedCourse.id)}/courseWork/-/studentSubmissions`,
+        )
+        const submissions = await fetchAllPages({
+          accessToken,
+          collectionName: 'studentSubmissions',
+          fetchImplementation,
+          requestTimeoutMs,
+          createRequestUrl(pageToken) {
+            const requestUrl = new URL(submissionsUrl)
+            requestUrl.searchParams.set('userId', 'me')
+            requestUrl.searchParams.set(
+              'fields',
+              'nextPageToken,studentSubmissions(courseWorkId,state,assignedGrade)',
+            )
+            requestUrl.searchParams.set(
+              'pageSize',
+              STUDENT_SUBMISSION_PAGE_SIZE,
+            )
+            if (pageToken !== undefined) {
+              requestUrl.searchParams.set('pageToken', pageToken)
+            }
+            return requestUrl
+          },
+        })
+
+        const submissionByCourseWorkId = new Map()
+        for (const submissionBody of submissions) {
+          const submission = readStudentSubmission(submissionBody)
+          if (submissionByCourseWorkId.has(submission.courseWorkId)) {
+            throw new ClassroomRequestError('invalid_response')
+          }
+          submissionByCourseWorkId.set(
+            submission.courseWorkId,
+            normalizeSubmissionStatus(submission),
+          )
+        }
+
+        const courseWork = mappedCourseWorkItems.map((courseWork) => {
+          const submissionStatus = submissionByCourseWorkId.get(
+            courseWork.courseWorkId,
+          )
+          if (submissionStatus === undefined) {
+            throw new ClassroomRequestError('invalid_response')
+          }
+
+          return { ...courseWork, submissionStatus }
+        })
+
         result.push({
           id: normalizedCourse.id,
           name: normalizedCourse.name,
-          courseWork: courseWorkItems.map((courseWork) =>
-            mapCourseWork(courseWork),
-          ),
+          courseWork,
         })
       }
 

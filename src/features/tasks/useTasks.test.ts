@@ -8,6 +8,7 @@ import { TaskWithFormDatabase } from '../../database/db'
 import { TaskRepository } from '../../database/task.repository'
 import { activeCourseListFixture } from './classroom.fixtures'
 import { syncClassroomCourses } from './classroom.sync'
+import { provideTaskSyncContext } from './taskSyncContext'
 import { toTask, useTasks } from './useTasks'
 import type { TaskRecord } from '../../database/database.types'
 
@@ -39,6 +40,16 @@ function createRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {
     status: 'unsubmitted',
     ...overrides,
   }
+}
+
+function createMainListRecords(): TaskRecord[] {
+  return [
+    createRecord({ id: 'due-8-days', dueDate: '2026-08-23' }),
+    createRecord({ id: 'due-7-days', dueDate: '2026-08-24' }),
+    createRecord({ id: 'due-today', dueDate: '2026-08-31' }),
+    createRecord({ id: 'due-future', dueDate: '2026-09-01' }),
+    createRecord({ id: 'undated', dueDate: undefined }),
+  ]
 }
 
 async function waitForStatus(
@@ -117,10 +128,10 @@ describe('useTasks', () => {
     )
   })
 
-  it('maps submitted records to submitted and all other records to unreviewed', () => {
+  it('keeps Gmail answer confirmation separate from Classroom submission status', () => {
     expect(
       toTask(createRecord({ status: 'submitted' }), 1, NOW()),
-    ).toMatchObject({ answerStatus: 'submitted' })
+    ).toMatchObject({ answerStatus: 'unreviewed' })
     expect(
       toTask(createRecord({ status: 'untracked' }), 1, NOW()),
     ).toMatchObject({ answerStatus: 'unreviewed' })
@@ -133,6 +144,67 @@ describe('useTasks', () => {
     expect(
       toTask(createRecord({ dueDate: '2026-08-30' }), 1, NOW()),
     ).toMatchObject({ warning: '期限切れ' })
+  })
+
+  it('hides tasks due more than seven calendar days ago and keeps contiguous indices in standalone mode', async () => {
+    const result = useTasks({
+      sync: vi.fn().mockResolvedValue({
+        syncedCourseIds: ['course-1'],
+        syncedTaskCount: 5,
+      }),
+      repository: {
+        getUnsubmittedTasks: vi.fn().mockResolvedValue(createMainListRecords()),
+      },
+      now: NOW,
+    })
+
+    await waitForStatus(result, 'ready')
+
+    expect(result.tasks.value.map((task) => task.id)).toEqual([
+      'due-7-days',
+      'due-today',
+      'due-future',
+      'undated',
+    ])
+    expect(result.tasks.value.map((task) => task.index)).toEqual([1, 2, 3, 4])
+  })
+
+  it('uses the same seven-day task-list window in shared-sync-context mode', async () => {
+    const getUnsubmittedTasks = vi
+      .fn()
+      .mockResolvedValue(createMainListRecords())
+    const repository = { getUnsubmittedTasks } as unknown as TaskRepository
+    const sync = vi.fn().mockResolvedValue({
+      syncedCourseIds: ['course-1'],
+      syncedTaskCount: 5,
+    })
+    let result: ReturnType<typeof useTasks> | undefined
+
+    const Consumer = defineComponent({
+      setup() {
+        result = useTasks({ now: NOW })
+        return () => h('div')
+      },
+    })
+    const Provider = defineComponent({
+      setup() {
+        provideTaskSyncContext({ repository, sync, now: NOW })
+        return () => h(Consumer)
+      },
+    })
+    const wrapper = mount(Provider)
+
+    await vi.waitFor(() => expect(result?.status.value).toBe('ready'))
+
+    expect(result?.tasks.value.map((task) => task.id)).toEqual([
+      'due-7-days',
+      'due-today',
+      'due-future',
+      'undated',
+    ])
+    expect(result?.tasks.value.map((task) => task.index)).toEqual([1, 2, 3, 4])
+
+    wrapper.unmount()
   })
 
   it('recovers after a failed initial load when retry is requested', async () => {

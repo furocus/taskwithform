@@ -116,7 +116,7 @@ const handleConfirmClick = (event: MouseEvent) => {
           <div
             class="task-actions ml-auto flex min-w-0 shrink-0 flex-col items-end gap-1.5 sm:gap-2"
           >
-            <AnswerStatusBadge :status="answerStatus" />
+            <AnswerStatusBadge v-if="hasForm" :status="answerStatus" />
 
             <p
               v-if="props.task.warning"

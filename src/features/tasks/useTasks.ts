@@ -57,6 +57,7 @@ export interface UseTasksResult {
 }
 
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000
+const MAIN_LIST_MAX_PAST_DAYS = 7
 
 type RepositoryLike =
   Pick<TaskRepository, 'getUnsubmittedTasks'> | TaskRepository
@@ -163,6 +164,21 @@ function formatDueWarning(dueDate: string | undefined, now: Date): string {
   return `あと${remainingDays}日`
 }
 
+function toTaskList(records: readonly TaskRecord[], now: Date): Task[] {
+  const todayMilliseconds = dateOnlyToUtcMilliseconds(toLocalDateOnly(now))
+  const visibleRecords = records.filter((record) => {
+    if (record.dueDate === undefined) return true
+
+    const daysSinceDue = Math.floor(
+      (todayMilliseconds - dateOnlyToUtcMilliseconds(record.dueDate)) /
+        DAY_IN_MILLISECONDS,
+    )
+    return daysSinceDue <= MAIN_LIST_MAX_PAST_DAYS
+  })
+
+  return visibleRecords.map((record, index) => toTask(record, index + 1, now))
+}
+
 export function toTask(record: TaskRecord, index: number, now: Date): Task {
   return {
     id: record.id,
@@ -172,7 +188,10 @@ export function toTask(record: TaskRecord, index: number, now: Date): Task {
     courseId: record.courseId,
     dueDate: formatDueDate(record.dueDate),
     warning: formatDueWarning(record.dueDate, now),
-    answerStatus: record.status === 'submitted' ? 'submitted' : 'unreviewed',
+    // Classroom submission state and Gmail Form answer confirmation are
+    // separate concerns. A task returned here is unsubmitted by Classroom;
+    // its Form response starts as unreviewed until Gmail is checked.
+    answerStatus: 'unreviewed',
     formUrls: [...record.formUrls],
   }
 }
@@ -201,10 +220,7 @@ function useTasksStandalone(options: UseTasksOptions = {}): UseTasksResult {
 
       if (disposed || currentRequestId !== requestId) return
 
-      const currentDate = now()
-      tasks.value = records.map((record, index) =>
-        toTask(record, index + 1, currentDate),
-      )
+      tasks.value = toTaskList(records, now())
       status.value = tasks.value.length > 0 ? 'ready' : 'empty'
     } catch (caughtError) {
       if (disposed || currentRequestId !== requestId) return
@@ -319,10 +335,7 @@ function useTasksFromContext(
       .then((records) => {
         if (disposed || revision !== syncContext.revision.value) return
 
-        const currentDate = now()
-        tasks.value = records.map((record, index) =>
-          toTask(record, index + 1, currentDate),
-        )
+        tasks.value = toTaskList(records, now())
         loadedRevision = revision
         status.value = tasks.value.length > 0 ? 'ready' : 'empty'
       })
