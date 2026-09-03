@@ -62,6 +62,19 @@ describe('mock frontend preview API', () => {
     })
     expect(JSON.parse(count.response.body ?? '')).toEqual({ count: 3 })
 
+    const coursework = request(
+      handler,
+      'GET',
+      '/api/classroom/courses/coursework',
+    )
+    expect(coursework.response.statusCode).toBe(200)
+    expect(JSON.parse(coursework.response.body ?? '')).toMatchObject({
+      courses: expect.arrayContaining([
+        expect.objectContaining({ id: 'course-math' }),
+        expect.objectContaining({ id: 'course-empty' }),
+      ]),
+    })
+
     const formResponse = request(
       handler,
       'GET',

@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig, type Plugin } from 'vite'
+import { activeCourseListFixture } from './src/features/tasks/classroom.fixtures'
 
 const MOCK_COURSE_COUNT = 3
 
@@ -67,6 +68,14 @@ export function createMockApiPlugin(): Plugin {
 
           if (method === 'GET' && pathname === '/api/classroom/courses/count') {
             sendJson(response, 200, { count: MOCK_COURSE_COUNT })
+            return
+          }
+
+          if (
+            method === 'GET' &&
+            pathname === '/api/classroom/courses/coursework'
+          ) {
+            sendJson(response, 200, activeCourseListFixture)
             return
           }
 

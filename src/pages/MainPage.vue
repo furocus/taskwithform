@@ -2,42 +2,22 @@
 import { reactive, ref } from 'vue'
 import ClassroomConnectionPanel from '../features/auth/components/ClassroomConnectionPanel.vue'
 import { checkTaskAnswerConfirmation } from '../features/tasks/answerConfirmation.api'
-import type { Task } from '../features/tasks/task.types'
 import TaskList from '../features/tasks/components/TaskList.vue'
-import { mockTasks } from '../mocks/tasks'
-
-type TaskListState = {
-  status: 'loading' | 'empty' | 'error' | 'ready'
-  tasks: Task[]
-  courseId: string
-}
+import { useTasks } from '../features/tasks/useTasks'
 
 type TaskConfirmationError = {
   code: string
   retryable?: boolean
 }
 
-const taskListState = reactive<TaskListState>({
-  status: 'ready',
-  tasks: mockTasks,
-  courseId: 'course-a',
-})
-const confirmingTaskId = ref<number | null>(null)
+const { status, tasks, courseId, reload, updateTaskAnswerStatus } = useTasks()
+const confirmingTaskId = ref<string | null>(null)
 const confirmationErrors = reactive<
-  Record<number, TaskConfirmationError | null>
+  Record<string, TaskConfirmationError | null>
 >({})
 
-const handleRetry = () => {
-  taskListState.status = 'loading'
-
-  window.setTimeout(() => {
-    taskListState.status = 'ready'
-    taskListState.tasks = mockTasks
-  }, 300)
-}
-
-const handleConfirmAnswer = async (taskId: number) => {
-  const task = taskListState.tasks.find((item) => item.id === taskId)
+const handleConfirmAnswer = async (taskId: string) => {
+  const task = tasks.value.find((item) => item.id === taskId)
   if (!task || !task.formUrls || task.formUrls.length === 0) {
     return
   }
@@ -51,13 +31,11 @@ const handleConfirmAnswer = async (taskId: number) => {
 
   try {
     const result = await checkTaskAnswerConfirmation({
-      taskId: String(taskId),
+      taskId,
       formUrls: task.formUrls,
     })
 
-    taskListState.tasks = taskListState.tasks.map((item) =>
-      item.id === taskId ? { ...item, answerStatus: result.status } : item,
-    )
+    updateTaskAnswerStatus(taskId, result.status)
   } catch (error) {
     const confirmationError = error as { code?: string; retryable?: boolean }
     confirmationErrors[taskId] = {
@@ -75,10 +53,10 @@ const handleConfirmAnswer = async (taskId: number) => {
 <template>
   <section class="space-y-5">
     <TaskList
-      :status="taskListState.status"
-      :tasks="taskListState.tasks"
-      :course-id="taskListState.courseId"
-      :on-retry="handleRetry"
+      :status="status"
+      :tasks="tasks"
+      :course-id="courseId"
+      :on-retry="reload"
       :on-confirm-answer="handleConfirmAnswer"
       :confirming-task-id="confirmingTaskId"
       :confirmation-errors="confirmationErrors"
