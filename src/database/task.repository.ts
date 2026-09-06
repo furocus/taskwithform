@@ -4,15 +4,9 @@ import type {
   TaskRecord,
   TaskRecordInput,
 } from './database.types'
-import {
-  database as defaultDatabase,
-  type TaskWithFormDatabase,
-} from './db'
+import { database as defaultDatabase, type TaskWithFormDatabase } from './db'
 
-export function createExternalKey(
-  courseId: string,
-  itemId: string,
-): string {
+export function createExternalKey(courseId: string, itemId: string): string {
   return JSON.stringify(['google-classroom', courseId, itemId])
 }
 
@@ -77,10 +71,7 @@ function validateDateString(value: string, name: string): void {
   }
 }
 
-function compareTasksByDueDate(
-  a: TaskRecord,
-  b: TaskRecord,
-): number {
+function compareTasksByDueDate(a: TaskRecord, b: TaskRecord): number {
   if (a.dueDate === undefined && b.dueDate === undefined) {
     return compareTaskTieBreaker(a, b)
   }
@@ -102,20 +93,14 @@ function compareTasksByDueDate(
   return compareTaskTieBreaker(a, b)
 }
 
-function compareTaskTieBreaker(
-  a: TaskRecord,
-  b: TaskRecord,
-): number {
+function compareTaskTieBreaker(a: TaskRecord, b: TaskRecord): number {
   const titleComparison = a.title.localeCompare(b.title, 'ja')
 
   if (titleComparison !== 0) {
     return titleComparison
   }
 
-  const courseNameComparison = a.courseName.localeCompare(
-    b.courseName,
-    'ja',
-  )
+  const courseNameComparison = a.courseName.localeCompare(b.courseName, 'ja')
 
   if (courseNameComparison !== 0) {
     return courseNameComparison
@@ -139,91 +124,70 @@ export class TaskRepository {
     return [this.database.tasks, this.database.syncStates] as const
   }
 
-  async replaceCourseSnapshot(
-    snapshot: CourseTaskSnapshot,
-  ): Promise<void> {
-    await this.database.transaction(
-      'rw',
-      ...this.syncTables,
-      async () => {
-        const existingTasks = await this.database.tasks
-          .where('courseId')
-          .equals(snapshot.courseId)
-          .toArray()
+  async replaceCourseSnapshot(snapshot: CourseTaskSnapshot): Promise<void> {
+    await this.database.transaction('rw', ...this.syncTables, async () => {
+      const existingTasks = await this.database.tasks
+        .where('courseId')
+        .equals(snapshot.courseId)
+        .toArray()
 
-        const existingByExternalKey = new Map(
-          existingTasks.map((task) => [task.externalKey, task]),
-        )
+      const existingByExternalKey = new Map(
+        existingTasks.map((task) => [task.externalKey, task]),
+      )
 
-        const incomingExternalKeys = new Set<string>()
-        const incomingRecords: TaskRecord[] = []
+      const incomingExternalKeys = new Set<string>()
+      const incomingRecords: TaskRecord[] = []
 
-        for (const input of snapshot.tasks) {
-          if (input.courseId !== snapshot.courseId) {
-            throw new Error(
-              `Snapshot courseId "${snapshot.courseId}" does not match task courseId "${input.courseId}".`,
-            )
-          }
-
-          const externalKey = createExternalKey(
-            input.courseId,
-            input.itemId,
-          )
-
-          if (incomingExternalKeys.has(externalKey)) {
-            throw new Error(
-              `Snapshot contains duplicate task "${externalKey}".`,
-            )
-          }
-
-          incomingExternalKeys.add(externalKey)
-
-          const id =
-            existingByExternalKey.get(externalKey)?.id ??
-            crypto.randomUUID()
-
-          incomingRecords.push(
-            toTaskRecord(input, id, externalKey),
+      for (const input of snapshot.tasks) {
+        if (input.courseId !== snapshot.courseId) {
+          throw new Error(
+            `Snapshot courseId "${snapshot.courseId}" does not match task courseId "${input.courseId}".`,
           )
         }
 
-        await this.database.tasks.bulkPut(incomingRecords)
+        const externalKey = createExternalKey(input.courseId, input.itemId)
 
-        const deletedTaskIds = existingTasks
-          .filter(
-            (task) =>
-              !incomingExternalKeys.has(task.externalKey),
-          )
-          .map((task) => task.id)
-
-        if (deletedTaskIds.length > 0) {
-          await this.database.tasks.bulkDelete(deletedTaskIds)
+        if (incomingExternalKeys.has(externalKey)) {
+          throw new Error(`Snapshot contains duplicate task "${externalKey}".`)
         }
 
-        await this.database.syncStates.put({
-          courseId: snapshot.courseId,
-          fetchedDate: snapshot.fetchedDate,
-        })
-      },
-    )
+        incomingExternalKeys.add(externalKey)
+
+        const id =
+          existingByExternalKey.get(externalKey)?.id ?? crypto.randomUUID()
+
+        incomingRecords.push(toTaskRecord(input, id, externalKey))
+      }
+
+      await this.database.tasks.bulkPut(incomingRecords)
+
+      const deletedTaskIds = existingTasks
+        .filter((task) => !incomingExternalKeys.has(task.externalKey))
+        .map((task) => task.id)
+
+      if (deletedTaskIds.length > 0) {
+        await this.database.tasks.bulkDelete(deletedTaskIds)
+      }
+
+      await this.database.syncStates.put({
+        courseId: snapshot.courseId,
+        fetchedDate: snapshot.fetchedDate,
+      })
+    })
   }
 
   async replaceActiveCourseSnapshots(
     snapshots: readonly CourseTaskSnapshot[],
   ): Promise<void> {
-    await this.database.transaction(
-      'rw',
-      ...this.syncTables,
-      async () => {
-        for (const snapshot of snapshots) {
-          await this.replaceCourseSnapshot(snapshot)
-        }
+    await this.database.transaction('rw', ...this.syncTables, async () => {
+      for (const snapshot of snapshots) {
+        await this.replaceCourseSnapshot(snapshot)
+      }
 
-        await this.removeInactiveCourses(
-          snapshots.map((snapshot) => snapshot.courseId),
-        )
-      },
-    )
+      await this.removeInactiveCourses(
+        snapshots.map((snapshot) => snapshot.courseId),
+      )
+    })
   }
 
   async removeInactiveCourses(
@@ -231,40 +195,28 @@ export class TaskRepository {
   ): Promise<void> {
     const activeCourseIdSet = new Set(activeCourseIds)
 
-    await this.database.transaction(
-      'rw',
-      ...this.syncTables,
-      async () => {
-        const [tasks, syncStates] = await Promise.all([
-          this.database.tasks.toArray(),
-          this.database.syncStates.toArray(),
-        ])
+    await this.database.transaction('rw', ...this.syncTables, async () => {
+      const [tasks, syncStates] = await Promise.all([
+        this.database.tasks.toArray(),
+        this.database.syncStates.toArray(),
+      ])
 
-        const deletedTaskIds = tasks
-          .filter(
-            (task) =>
-              !activeCourseIdSet.has(task.courseId),
-          )
-          .map((task) => task.id)
+      const deletedTaskIds = tasks
+        .filter((task) => !activeCourseIdSet.has(task.courseId))
+        .map((task) => task.id)
 
-        const deletedSyncStateIds = syncStates
-          .filter(
-            (state) =>
-              !activeCourseIdSet.has(state.courseId),
-          )
-          .map((state) => state.courseId)
+      const deletedSyncStateIds = syncStates
+        .filter((state) => !activeCourseIdSet.has(state.courseId))
+        .map((state) => state.courseId)
 
-        if (deletedTaskIds.length > 0) {
-          await this.database.tasks.bulkDelete(deletedTaskIds)
-        }
+      if (deletedTaskIds.length > 0) {
+        await this.database.tasks.bulkDelete(deletedTaskIds)
+      }
 
-        if (deletedSyncStateIds.length > 0) {
-          await this.database.syncStates.bulkDelete(
-            deletedSyncStateIds,
-          )
-        }
-      },
-    )
+      if (deletedSyncStateIds.length > 0) {
+        await this.database.syncStates.bulkDelete(deletedSyncStateIds)
+      }
+    })
   }
 
   async getAllTasks(): Promise<TaskRecord[]> {
@@ -288,9 +240,7 @@ export class TaskRepository {
     validateDateString(endDate, 'endDate')
 
     if (startDate > endDate) {
-      throw new Error(
-        'startDate must not be after endDate.',
-      )
+      throw new Error('startDate must not be after endDate.')
     }
 
     const tasks = await this.database.tasks
@@ -306,47 +256,33 @@ export class TaskRepository {
     startDate: string,
     endDate: string,
   ): Promise<Record<string, TaskRecord[]>> {
-    const tasks =
-      await this.getUnsubmittedTasksInDateRange(
-        startDate,
-        endDate,
-      )
+    const tasks = await this.getUnsubmittedTasksInDateRange(startDate, endDate)
 
-    return tasks.reduce<Record<string, TaskRecord[]>>(
-      (grouped, task) => {
-        if (task.dueDate === undefined) {
-          return grouped
-        }
-
-        const tasksForDate =
-          grouped[task.dueDate] ?? []
-
-        tasksForDate.push(task)
-        grouped[task.dueDate] = tasksForDate
-
+    return tasks.reduce<Record<string, TaskRecord[]>>((grouped, task) => {
+      if (task.dueDate === undefined) {
         return grouped
-      },
-      {},
-    )
+      }
+
+      const tasksForDate = grouped[task.dueDate] ?? []
+
+      tasksForDate.push(task)
+      grouped[task.dueDate] = tasksForDate
+
+      return grouped
+    }, {})
   }
 
   async getSyncStates(): Promise<SyncState[]> {
-    return this.database.syncStates
-      .orderBy('courseId')
-      .toArray()
+    return this.database.syncStates.orderBy('courseId').toArray()
   }
 
   async clearLocalData(): Promise<void> {
-    await this.database.transaction(
-      'rw',
-      ...this.syncTables,
-      async () => {
-        await Promise.all([
-          this.database.tasks.clear(),
-          this.database.syncStates.clear(),
-        ])
-      },
-    )
+    await this.database.transaction('rw', ...this.syncTables, async () => {
+      await Promise.all([
+        this.database.tasks.clear(),
+        this.database.syncStates.clear(),
+      ])
+    })
   }
 }
 

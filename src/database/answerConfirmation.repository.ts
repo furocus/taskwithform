@@ -3,10 +3,7 @@ import type {
   AnswerConfirmationRecord,
   AnswerConfirmationStatus,
 } from './database.types'
-import {
-  database as defaultDatabase,
-  type TaskWithFormDatabase,
-} from './db'
+import { database as defaultDatabase, type TaskWithFormDatabase } from './db'
 
 /** Form回答確認結果（AnswerConfirmation）のデータ操作を行うリポジトリクラス */
 export class AnswerConfirmationRepository {
@@ -94,5 +91,4 @@ export class AnswerConfirmationRepository {
   }
 }
 
-export const answerConfirmationRepository =
-  new AnswerConfirmationRepository()
+export const answerConfirmationRepository = new AnswerConfirmationRepository()

@@ -48,8 +48,7 @@ export async function seedLocalDatabase(): Promise<void> {
         forms: [
           {
             resolution: 'unresolved',
-            sourceUrl:
-              'https://docs.google.com/forms/d/seed-form-1/viewform',
+            sourceUrl: 'https://docs.google.com/forms/d/seed-form-1/viewform',
           },
         ],
       }),

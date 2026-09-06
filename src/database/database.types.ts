@@ -13,15 +13,10 @@ export type TaskStatus = 'unsubmitted' | 'submitted' | 'untracked'
  * courseWorkMaterial: 資料
  * announcement: お知らせ
  */
-export type TaskItemType =
-  | 'courseWork'
-  | 'courseWorkMaterial'
-  | 'announcement'
+export type TaskItemType = 'courseWork' | 'courseWorkMaterial' | 'announcement'
 
 export type ClassroomCourseWorkType =
-  | 'ASSIGNMENT'
-  | 'SHORT_ANSWER_QUESTION'
-  | 'MULTIPLE_CHOICE_QUESTION'
+  'ASSIGNMENT' | 'SHORT_ANSWER_QUESTION' | 'MULTIPLE_CHOICE_QUESTION'
 
 /**
  * Formの参照情報。
@@ -33,8 +28,7 @@ export type ClassroomCourseWorkType =
  *   URLは保持しているが、Form IDを解決できていない。
  */
 export type TaskFormReference =
-  | ResolvedTaskFormReference
-  | UnresolvedTaskFormReference
+  ResolvedTaskFormReference | UnresolvedTaskFormReference
 
 export interface ResolvedTaskFormReference {
   resolution: 'resolved'
@@ -107,9 +101,7 @@ export interface CourseTaskSnapshot {
  * TaskStatusとは別概念として扱う。
  */
 export type AnswerConfirmationStatus =
-  | 'submitted'
-  | 'unreviewable'
-  | 'needsReview'
+  'submitted' | 'unreviewable' | 'needsReview'
 
 /**
  * 「配布項目 × Form参照」の現在の回答確認状態。

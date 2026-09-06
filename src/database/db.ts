@@ -11,10 +11,7 @@ export const DATABASE_NAME = 'taskwithform'
 export class TaskWithFormDatabase extends Dexie {
   tasks!: Table<TaskRecord, string>
   syncStates!: Table<SyncState, string>
-  answerConfirmations!: Table<
-    AnswerConfirmationRecord,
-    [string, string]
-  >
+  answerConfirmations!: Table<AnswerConfirmationRecord, [string, string]>
 
   constructor(name = DATABASE_NAME) {
     super(name)
@@ -73,9 +70,7 @@ export class TaskWithFormDatabase extends Dexie {
           }
 
           if (task.forms === undefined) {
-            const formUrls = Array.isArray(task.formUrls)
-              ? task.formUrls
-              : []
+            const formUrls = Array.isArray(task.formUrls) ? task.formUrls : []
 
             task.forms = formUrls.map((sourceUrl: string) => ({
               resolution: 'unresolved',
@@ -88,8 +83,7 @@ export class TaskWithFormDatabase extends Dexie {
           delete task.formUrls
         })
 
-        const answerConfirmations =
-          transaction.table('answerConfirmations')
+        const answerConfirmations = transaction.table('answerConfirmations')
 
         /*
          * 旧answerConfirmationsは
