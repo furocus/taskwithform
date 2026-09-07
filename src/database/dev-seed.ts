@@ -19,13 +19,16 @@ function createTask(overrides: Partial<TaskRecordInput> = {}): TaskRecordInput {
   return {
     courseId: 'seed-course-1',
     courseName: 'seedテスト1',
-    courseWorkId: 'seed-work-1',
+    itemType: 'courseWork',
+    itemId: 'seed-work-1',
+    courseWorkType: 'ASSIGNMENT',
+    creationTime: new Date().toISOString(),
     subjectName: 'プログラミングI',
     title: 'seed: 1',
-    formUrls: [],
+    forms: [],
     status: 'unsubmitted',
     ...overrides,
-  } as TaskRecordInput
+  }
 }
 
 export async function seedLocalDatabase(): Promise<void> {
@@ -40,22 +43,30 @@ export async function seedLocalDatabase(): Promise<void> {
     fetchedDate: dateFromToday(0),
     tasks: [
       createTask({
-        courseWorkId: 'seed-work-due-today',
+        itemId: 'seed-work-due-today',
         title: 'seed: 今日が期限の課題',
         dueDate: dateFromToday(0),
-        formUrls: ['https://docs.google.com/forms/d/seed-form-1/viewform'],
+        forms: [
+          {
+            resolution: 'resolved',
+            sourceUrl: 'https://docs.google.com/forms/d/seed-form-1/viewform',
+            formId: 'seed-form-1',
+            formIdType: 'standard',
+            formUrl: 'https://docs.google.com/forms/d/seed-form-1/viewform',
+          },
+        ],
       }),
       createTask({
-        courseWorkId: 'seed-work-due-later',
+        itemId: 'seed-work-due-later',
         title: 'seed: 3日後が期限の課題',
         dueDate: dateFromToday(3),
       }),
       createTask({
-        courseWorkId: 'seed-work-no-due-date',
+        itemId: 'seed-work-no-due-date',
         title: 'seed: 期限なしの課題',
       }),
       createTask({
-        courseWorkId: 'seed-work-submitted',
+        itemId: 'seed-work-submitted',
         title: 'seed: 提出済みの課題',
         dueDate: dateFromToday(-1),
         status: 'submitted',
@@ -71,7 +82,7 @@ export async function seedLocalDatabase(): Promise<void> {
       createTask({
         courseId: 'seed-course-2',
         courseName: 'seedテスト2',
-        courseWorkId: 'seed-work-2',
+        itemId: 'seed-work-2',
         subjectName: 'デジタル社会と日本の未来',
         title: 'seed: 2',
         dueDate: dateFromToday(7),

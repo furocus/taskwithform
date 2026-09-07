@@ -1,71 +1,96 @@
 import type {
   AnswerConfirmationInput,
   AnswerConfirmationRecord,
+  AnswerConfirmationStatus,
+  TaskFormReference,
 } from './database.types'
 import { database as defaultDatabase, type TaskWithFormDatabase } from './db'
+import { createFormReferenceKey } from './formReference'
 
-/** Form回答確認結果（AnswerConfirmation）のデータ操作を行うリポジトリクラス */
+/**
+ * Stores the current Gmail answer confirmation state of one Form inside one
+ * distribution item.
+ *
+ * The table holds current state, not history: `[taskExternalKey +
+ * formReferenceKey]` is the primary key and every write is a `put`, so
+ * re-checking the same Form replaces the row instead of appending to it.
+ */
 export class AnswerConfirmationRepository {
   constructor(
     private readonly database: TaskWithFormDatabase = defaultDatabase,
   ) {}
 
   /**
-   * 回答確認結果を保存(新規追加)する
-   * @param input　id以外の回答確認情報
-   * @returns 生成されたレコードのid(number)
+   * Builds the storage key for a Form reference. Throws for an unresolved
+   * reference, which has no Form identity to attach a result to.
    */
-  async save(input: AnswerConfirmationInput): Promise<number> {
+  static createKey(reference: TaskFormReference): string {
+    return createFormReferenceKey(reference)
+  }
+
+  /** Saves the current state, replacing any previous result for the same Form. */
+  async upsert(input: AnswerConfirmationInput): Promise<void> {
     const record: AnswerConfirmationRecord = {
-      formUrl: input.formUrl,
+      taskExternalKey: input.taskExternalKey,
+      formReferenceKey: input.formReferenceKey,
       status: input.status,
-      confirmedAt: input.confirmedAt ?? new Date().toISOString(),
+      confirmedAt: input.confirmedAt,
     }
-    return this.database.answerConfirmations.add(record)
+
+    await this.database.answerConfirmations.put(record)
   }
 
-  /**
-   * IDによって単一の回答確認結果を取得します。
-   * @param id レコードID
-   */
-  async getById(id: number): Promise<AnswerConfirmationRecord | undefined> {
-    return this.database.answerConfirmations.get(id)
+  /** Returns the single current state, or undefined when never confirmed. */
+  async get(
+    taskExternalKey: string,
+    formReferenceKey: string,
+  ): Promise<AnswerConfirmationRecord | undefined> {
+    return this.database.answerConfirmations.get([
+      taskExternalKey,
+      formReferenceKey,
+    ])
   }
 
-  /**
-   * 指定した Form URL に該当する回答確認結果のリストを取得します。
-   * @param formUrl 対象のForm URL
-   */
-  async getByFormUrl(formUrl: string): Promise<AnswerConfirmationRecord[]> {
+  /** Every confirmed Form of one distribution item, for per-Form cards. */
+  async getByTask(
+    taskExternalKey: string,
+  ): Promise<AnswerConfirmationRecord[]> {
     return this.database.answerConfirmations
-      .where('formUrl')
-      .equals(formUrl)
+      .where('taskExternalKey')
+      .equals(taskExternalKey)
       .toArray()
   }
 
-  /**
-   * 指定した ID の回答確認結果を更新します。
-   * @param id 更新対象のレコードID
-   * @param changes 更新内容
-   */
-  async update(
-    id: number,
-    changes: Partial<AnswerConfirmationInput>,
+  /** Reverse lookup: the same Form can be distributed by several items. */
+  async getByFormReferenceKey(
+    formReferenceKey: string,
+  ): Promise<AnswerConfirmationRecord[]> {
+    return this.database.answerConfirmations
+      .where('formReferenceKey')
+      .equals(formReferenceKey)
+      .toArray()
+  }
+
+  async listByStatus(
+    status: AnswerConfirmationStatus,
+  ): Promise<AnswerConfirmationRecord[]> {
+    return this.database.answerConfirmations
+      .where('status')
+      .equals(status)
+      .toArray()
+  }
+
+  async delete(
+    taskExternalKey: string,
+    formReferenceKey: string,
   ): Promise<void> {
-    await this.database.answerConfirmations.update(id, changes)
+    await this.database.answerConfirmations.delete([
+      taskExternalKey,
+      formReferenceKey,
+    ])
   }
 
-  /**
-   * 指定したIDのレコードのみを削除
-   * @param id 削除対象のレコードID
-   */
-  async delete(id: number): Promise<void> {
-    await this.database.answerConfirmations.delete(id)
-  }
-
-  /**
-   * ローカル保存データ全消去機能用。
-   */
+  /** Used by the local data reset. */
   async clearAll(): Promise<void> {
     await this.database.answerConfirmations.clear()
   }
