@@ -71,10 +71,7 @@ export function createMockApiPlugin(): Plugin {
             return
           }
 
-          if (
-            method === 'GET' &&
-            pathname === '/api/classroom/courses/coursework'
-          ) {
+          if (method === 'GET' && pathname === '/api/classroom/courses/items') {
             sendJson(response, 200, activeCourseListFixture)
             return
           }

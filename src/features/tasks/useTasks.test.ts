@@ -32,11 +32,21 @@ function createRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {
     source: 'google-classroom',
     courseId: 'course-1',
     courseName: '数学I',
-    courseWorkId: 'work-1',
+    itemType: 'courseWork',
+    itemId: 'work-1',
+    creationTime: '2026-08-01T00:00:00.000Z',
     courseWorkType: 'ASSIGNMENT',
     subjectName: '数学',
     title: '確認テスト',
-    formUrls: ['https://docs.google.com/forms/d/form-id/viewform'],
+    forms: [
+      {
+        resolution: 'resolved',
+        sourceUrl: 'https://docs.google.com/forms/d/form-id/viewform',
+        formId: 'form-id',
+        formIdType: 'standard',
+        formUrl: 'https://docs.google.com/forms/d/form-id/viewform',
+      },
+    ],
     status: 'unsubmitted',
     ...overrides,
   }
@@ -123,7 +133,7 @@ describe('useTasks', () => {
       warning: '',
     })
     expect(fetchImplementation).toHaveBeenCalledWith(
-      '/api/classroom/courses/coursework',
+      '/api/classroom/courses/items',
       { credentials: 'same-origin' },
     )
   })
@@ -153,7 +163,7 @@ describe('useTasks', () => {
         syncedTaskCount: 5,
       }),
       repository: {
-        getUnsubmittedTasks: vi.fn().mockResolvedValue(createMainListRecords()),
+        getIncompleteTasks: vi.fn().mockResolvedValue(createMainListRecords()),
       },
       now: NOW,
     })
@@ -170,10 +180,10 @@ describe('useTasks', () => {
   })
 
   it('uses the same seven-day task-list window in shared-sync-context mode', async () => {
-    const getUnsubmittedTasks = vi
+    const getIncompleteTasks = vi
       .fn()
       .mockResolvedValue(createMainListRecords())
-    const repository = { getUnsubmittedTasks } as unknown as TaskRepository
+    const repository = { getIncompleteTasks } as unknown as TaskRepository
     const sync = vi.fn().mockResolvedValue({
       syncedCourseIds: ['course-1'],
       syncedTaskCount: 5,
@@ -215,11 +225,11 @@ describe('useTasks', () => {
         syncedCourseIds: ['course-1'],
         syncedTaskCount: 1,
       })
-    const getUnsubmittedTasks = vi.fn().mockResolvedValue([createRecord()])
+    const getIncompleteTasks = vi.fn().mockResolvedValue([createRecord()])
 
     const result = useTasks({
       sync,
-      repository: { getUnsubmittedTasks },
+      repository: { getIncompleteTasks },
       now: NOW,
     })
     await waitForStatus(result, 'error')
@@ -241,7 +251,7 @@ describe('useTasks', () => {
         syncedTaskCount: 1,
       }),
       repository: {
-        getUnsubmittedTasks: vi
+        getIncompleteTasks: vi
           .fn()
           .mockRejectedValue(new Error('IndexedDB unavailable')),
       },
@@ -280,11 +290,10 @@ describe('useTasks', () => {
       courses: [
         {
           ...activeCourseListFixture.courses[0]!,
-          courseWork: activeCourseListFixture.courses[0]!.courseWork.map(
-            (courseWork) =>
-              courseWork.courseWorkId === 'work-quiz'
-                ? { ...courseWork, title: '最新の確認テスト' }
-                : courseWork,
+          items: activeCourseListFixture.courses[0]!.items.map((item) =>
+            item.itemId === 'work-quiz'
+              ? { ...item, title: '最新の確認テスト' }
+              : item,
           ),
         },
         activeCourseListFixture.courses[1]!,
@@ -314,7 +323,7 @@ describe('useTasks', () => {
     })
     expect(
       (await repository.getAllTasks()).find(
-        (task) => task.courseWorkId === 'work-quiz',
+        (task) => task.itemId === 'work-quiz',
       ),
     ).toMatchObject({ title: '最新の確認テスト' })
     expect(maxRequestsInFlight).toBe(1)
@@ -344,11 +353,10 @@ describe('useTasks', () => {
       courses: [
         {
           ...activeCourseListFixture.courses[0]!,
-          courseWork: activeCourseListFixture.courses[0]!.courseWork.map(
-            (courseWork) =>
-              courseWork.courseWorkId === 'work-quiz'
-                ? { ...courseWork, title: '再マウント後の最新課題' }
-                : courseWork,
+          items: activeCourseListFixture.courses[0]!.items.map((item) =>
+            item.itemId === 'work-quiz'
+              ? { ...item, title: '再マウント後の最新課題' }
+              : item,
           ),
         },
         activeCourseListFixture.courses[1]!,
@@ -400,7 +408,7 @@ describe('useTasks', () => {
     })
     expect(
       (await repository.getAllTasks()).find(
-        (task) => task.courseWorkId === 'work-quiz',
+        (task) => task.itemId === 'work-quiz',
       ),
     ).toMatchObject({ title: '再マウント後の最新課題' })
     expect(maxRequestsInFlight).toBe(1)
@@ -413,12 +421,12 @@ describe('useTasks', () => {
     const firstSync = vi.fn(() => firstSyncCompletion.promise)
     const secondSync = vi.fn().mockResolvedValue(undefined)
     const firstResult = useTasks({
-      repository: { getUnsubmittedTasks: vi.fn().mockResolvedValue([]) },
+      repository: { getIncompleteTasks: vi.fn().mockResolvedValue([]) },
       sync: firstSync,
       now: NOW,
     })
     const secondResult = useTasks({
-      repository: { getUnsubmittedTasks: vi.fn().mockResolvedValue([]) },
+      repository: { getIncompleteTasks: vi.fn().mockResolvedValue([]) },
       sync: secondSync,
       now: NOW,
     })
@@ -437,7 +445,7 @@ describe('useTasks', () => {
         .fn()
         .mockResolvedValue({ syncedCourseIds: [], syncedTaskCount: 0 }),
       repository: {
-        getUnsubmittedTasks: vi.fn().mockResolvedValue([createRecord()]),
+        getIncompleteTasks: vi.fn().mockResolvedValue([createRecord()]),
       },
       now: NOW,
     })

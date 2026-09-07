@@ -26,9 +26,9 @@ describe('answer confirmation aggregation', () => {
     expect(aggregateAnswerConfirmationResults(results)).toBe('needsReview')
   })
 
-  it('prioritizes needsReview when mixed with unreviewable (Must 3)', () => {
+  it('prioritizes needsReview when mixed with unreviewable', () => {
     const results: FormConfirmationResult[] = [
-      { formUrl: 'https://forms.google.com/1', status: 'needs_review' },
+      { formUrl: 'https://forms.google.com/1', status: 'needsReview' },
       { formUrl: 'https://forms.google.com/2', status: 'unreviewable' },
     ]
 
@@ -63,10 +63,20 @@ describe('answer confirmation aggregation', () => {
       'form-abc',
     ],
     ['https://forms.google.com/forms/d/form-xyz/viewform', 'form-xyz'],
-    ['https://forms.google.com/form-123', 'form-123'],
-    ['https://forms.google.com/needs-review-form/', 'needs-review-form'],
+    ['https://forms.google.com/d/form-123/viewform', 'form-123'],
   ])('extracts formId from %s', (formUrl, expectedFormId) => {
     expect(extractFormId(formUrl)).toBe(expectedFormId)
+  })
+
+  it.each([
+    'https://example.com/form-id',
+    'https://forms.google.com/form-id',
+    'form-id',
+    'not a URL',
+  ])('rejects an unknown Form URL without a path-segment fallback', (value) => {
+    expect(() => extractFormId(value)).toThrowError(
+      expect.objectContaining({ code: 'invalid_form_url', retryable: false }),
+    )
   })
 
   it('fetches GET /api/gmail/forms/:formId/response for each form (Must 1 & 2)', async () => {
@@ -87,8 +97,8 @@ describe('answer confirmation aggregation', () => {
       {
         taskId: 'task-100',
         formUrls: [
-          'https://forms.google.com/form-1',
-          'https://forms.google.com/form-2',
+          'https://forms.google.com/d/e/form-1/viewform',
+          'https://forms.google.com/d/e/form-2/viewform',
         ],
       },
       fakeFetch as unknown as typeof fetch,
@@ -96,13 +106,13 @@ describe('answer confirmation aggregation', () => {
 
     expect(fakeFetch).toHaveBeenCalledTimes(2)
     expect(fakeFetch).toHaveBeenCalledWith(
-      '/api/gmail/forms/form-1/response',
+      '/api/gmail/forms/form-1/response?formIdType=published',
       expect.objectContaining({ method: 'GET' }),
     )
     expect(result.status).toBe('needsReview')
   })
 
-  it('uses the canonical Form ID and URI-encodes it in the response endpoint', async () => {
+  it('passes the published Form ID space to the response endpoint', async () => {
     const fakeFetch = vi.fn(
       async () =>
         new Response(JSON.stringify({ status: 'submitted' }), { status: 200 }),
@@ -113,7 +123,6 @@ describe('answer confirmation aggregation', () => {
         taskId: 'task-101',
         formUrls: [
           'https://docs.google.com/forms/d/e/published-form/viewform?usp=sharing#x',
-          'form id',
         ],
       },
       fakeFetch as unknown as typeof fetch,
@@ -121,13 +130,55 @@ describe('answer confirmation aggregation', () => {
 
     expect(fakeFetch).toHaveBeenNthCalledWith(
       1,
-      '/api/gmail/forms/published-form/response',
-      expect.objectContaining({ method: 'GET' }),
-    )
-    expect(fakeFetch).toHaveBeenNthCalledWith(
-      2,
-      '/api/gmail/forms/form%20id/response',
+      '/api/gmail/forms/published-form/response?formIdType=published',
       expect.objectContaining({ method: 'GET' }),
     )
   })
+
+  it('keeps the standard-ID mismatch reason from the backend', async () => {
+    const fakeFetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            status: 'unreviewable',
+            reason: 'standard_id_not_matchable',
+          }),
+          { status: 200 },
+        ),
+    )
+
+    const result = await checkTaskAnswerConfirmation(
+      {
+        taskId: 'task-standard',
+        formUrls: ['https://docs.google.com/forms/d/standard-form/viewform'],
+      },
+      fakeFetch as unknown as typeof fetch,
+    )
+
+    expect(result.formResults[0]).toMatchObject({
+      status: 'unreviewable',
+      reason: 'standard_id_not_matchable',
+    })
+  })
+
+  it.each(['answered', 'needs_review', 'pending'])(
+    'rejects the legacy backend status %s',
+    async (status) => {
+      const fakeFetch = vi.fn(
+        async () => new Response(JSON.stringify({ status }), { status: 200 }),
+      )
+
+      await expect(
+        checkTaskAnswerConfirmation(
+          {
+            taskId: 'task-legacy',
+            formUrls: [
+              'https://docs.google.com/forms/d/e/published-form/viewform',
+            ],
+          },
+          fakeFetch as unknown as typeof fetch,
+        ),
+      ).rejects.toMatchObject({ code: 'invalid_backend_response' })
+    },
+  )
 })
