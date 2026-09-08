@@ -86,6 +86,26 @@ describe('TaskRepository', () => {
     expect(new Set(tasks.map((task) => task.externalKey)).size).toBe(2)
   })
 
+  it('stores the same itemId from different item types as separate tasks', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-26',
+      tasks: [createTaskInput()],
+    })
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-26',
+      tasks: [
+        createTaskInput(),
+        createTaskInput({ itemType: 'courseWorkMaterial', itemId: 'work-1' }),
+      ],
+    })
+
+    const tasks = await repository.getAllTasks()
+    expect(tasks).toHaveLength(2)
+    expect(new Set(tasks.map((task) => task.externalKey)).size).toBe(2)
+  })
+
   it('deletes only target course tasks when replacing it with an empty snapshot', async () => {
     await repository.replaceCourseSnapshot({
       courseId: 'course-1',
