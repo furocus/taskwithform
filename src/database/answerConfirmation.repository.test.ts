@@ -63,9 +63,9 @@ describe('AnswerConfirmationRepository', () => {
     await expect(
       repository.get('task-1', 'standard:form-1'),
     ).resolves.toMatchObject({ status: 'submitted' })
-    await expect(repository.getByTaskExternalKey('task-1')).resolves.toHaveLength(
-      1,
-    )
+    await expect(
+      repository.getByTaskExternalKey('task-1'),
+    ).resolves.toHaveLength(1)
   })
 
   it('separates standard and published Form ID namespaces', async () => {
@@ -82,12 +82,12 @@ describe('AnswerConfirmationRepository', () => {
       confirmedAt: '2026-09-08T00:00:00.000Z',
     })
 
-    await expect(repository.getByTaskExternalKey('task-1')).resolves.toHaveLength(
-      2,
-    )
-    await expect(repository.getByFormReferenceKey('published:same-id')).resolves.toMatchObject(
-      [{ status: 'needsReview' }],
-    )
+    await expect(
+      repository.getByTaskExternalKey('task-1'),
+    ).resolves.toHaveLength(2)
+    await expect(
+      repository.getByFormReferenceKey('published:same-id'),
+    ).resolves.toMatchObject([{ status: 'needsReview' }])
   })
 
   it('rejects unresolved or non-canonical Form keys', async () => {

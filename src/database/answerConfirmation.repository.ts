@@ -1,6 +1,4 @@
-import {
-  isFormReferenceKey,
-} from './database.types'
+import { isFormReferenceKey } from './database.types'
 import type {
   AnswerConfirmationInput,
   AnswerConfirmationRecord,
@@ -15,7 +13,9 @@ export class AnswerConfirmationRepository {
     private readonly database: TaskWithFormDatabase = defaultDatabase,
   ) {}
 
-  private assertFormReferenceKey(value: string): asserts value is FormReferenceKey {
+  private assertFormReferenceKey(
+    value: string,
+  ): asserts value is FormReferenceKey {
     if (!isFormReferenceKey(value)) {
       throw new Error(
         'formReferenceKey must be a canonical standard:<id> or published:<id> key.',

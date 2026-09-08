@@ -62,7 +62,10 @@ export function createFormReferenceKey(
     throw new Error('An unresolved Form reference cannot be confirmed.')
   }
 
-  if (reference.standardFormId !== undefined && reference.standardFormId !== '') {
+  if (
+    reference.standardFormId !== undefined &&
+    reference.standardFormId !== ''
+  ) {
     return `standard:${reference.standardFormId}`
   }
 
