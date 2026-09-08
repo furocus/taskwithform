@@ -6,8 +6,20 @@ import type {
 } from './database.types'
 import { database as defaultDatabase, type TaskWithFormDatabase } from './db'
 
-export function createExternalKey(courseId: string, itemId: string): string {
-  return JSON.stringify(['google-classroom', courseId, itemId])
+export function createExternalKey(courseId: string, itemId: string): string
+export function createExternalKey(
+  courseId: string,
+  itemType: TaskRecordInput['itemType'],
+  itemId: string,
+): string
+export function createExternalKey(
+  courseId: string,
+  itemTypeOrItemId: string,
+  maybeItemId?: string,
+): string {
+  const itemType = maybeItemId === undefined ? 'courseWork' : itemTypeOrItemId
+  const itemId = maybeItemId ?? itemTypeOrItemId
+  return JSON.stringify(['google-classroom', courseId, itemType, itemId])
 }
 
 function toTaskRecord(
@@ -145,7 +157,11 @@ export class TaskRepository {
           )
         }
 
-        const externalKey = createExternalKey(input.courseId, input.itemId)
+        const externalKey = createExternalKey(
+          input.courseId,
+          input.itemType,
+          input.itemId,
+        )
 
         if (incomingExternalKeys.has(externalKey)) {
           throw new Error(`Snapshot contains duplicate task "${externalKey}".`)

@@ -1,7 +1,11 @@
+import {
+  isFormReferenceKey,
+} from './database.types'
 import type {
   AnswerConfirmationInput,
   AnswerConfirmationRecord,
   AnswerConfirmationStatus,
+  FormReferenceKey,
 } from './database.types'
 import { database as defaultDatabase, type TaskWithFormDatabase } from './db'
 
@@ -11,6 +15,14 @@ export class AnswerConfirmationRepository {
     private readonly database: TaskWithFormDatabase = defaultDatabase,
   ) {}
 
+  private assertFormReferenceKey(value: string): asserts value is FormReferenceKey {
+    if (!isFormReferenceKey(value)) {
+      throw new Error(
+        'formReferenceKey must be a canonical standard:<id> or published:<id> key.',
+      )
+    }
+  }
+
   /**
    * 回答確認結果を保存・更新します。
    *
@@ -18,6 +30,7 @@ export class AnswerConfirmationRepository {
    * 同じ対象を再確認してもレコードを追加せず更新します。
    */
   async save(input: AnswerConfirmationInput): Promise<void> {
+    this.assertFormReferenceKey(input.formReferenceKey)
     await this.database.answerConfirmations.put(input)
   }
 
@@ -28,6 +41,7 @@ export class AnswerConfirmationRepository {
     taskExternalKey: string,
     formReferenceKey: string,
   ): Promise<AnswerConfirmationRecord | undefined> {
+    this.assertFormReferenceKey(formReferenceKey)
     return this.database.answerConfirmations.get([
       taskExternalKey,
       formReferenceKey,
@@ -77,6 +91,7 @@ export class AnswerConfirmationRepository {
     taskExternalKey: string,
     formReferenceKey: string,
   ): Promise<void> {
+    this.assertFormReferenceKey(formReferenceKey)
     await this.database.answerConfirmations.delete([
       taskExternalKey,
       formReferenceKey,

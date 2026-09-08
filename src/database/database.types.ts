@@ -52,6 +52,34 @@ export interface UnresolvedTaskFormReference {
   sourceUrl: string
 }
 
+export type FormReferenceKey = `standard:${string}` | `published:${string}`
+
+/** Returns the stable key used by answer-confirmation records. */
+export function createFormReferenceKey(
+  reference: TaskFormReference,
+): FormReferenceKey {
+  if (reference.resolution !== 'resolved') {
+    throw new Error('An unresolved Form reference cannot be confirmed.')
+  }
+
+  if (reference.standardFormId !== undefined && reference.standardFormId !== '') {
+    return `standard:${reference.standardFormId}`
+  }
+
+  if (
+    reference.publishedFormId !== undefined &&
+    reference.publishedFormId !== ''
+  ) {
+    return `published:${reference.publishedFormId}`
+  }
+
+  throw new Error('A resolved Form reference must have a Form ID.')
+}
+
+export function isFormReferenceKey(value: string): value is FormReferenceKey {
+  return /^(standard|published):.+$/.test(value)
+}
+
 export interface TaskRecord {
   id: string
   externalKey: string

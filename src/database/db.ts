@@ -11,7 +11,9 @@ export const DATABASE_NAME = 'taskwithform'
 export class TaskWithFormDatabase extends Dexie {
   tasks!: Table<TaskRecord, string>
   syncStates!: Table<SyncState, string>
-  answerConfirmations!: Table<AnswerConfirmationRecord, [string, string]>
+  get answerConfirmations(): Table<AnswerConfirmationRecord, [string, string]> {
+    return this.table('answerConfirmationsV5')
+  }
 
   constructor(name = DATABASE_NAME) {
     super(name)
@@ -36,14 +38,23 @@ export class TaskWithFormDatabase extends Dexie {
       answerConfirmations: '++id, formUrl, status, confirmedAt',
     })
 
-    this.version(4)
+    this.version(4).stores({
+      tasks:
+        'id, &externalKey, courseId, subjectName, dueDate, status, [status+dueDate], itemType, itemId, creationTime',
+      syncStates: 'courseId',
+      answerConfirmations: '++id, formUrl, status, confirmedAt',
+    })
+
+    this.version(5)
       .stores({
         tasks:
           'id, &externalKey, courseId, subjectName, dueDate, status, [status+dueDate], itemType, itemId, creationTime',
 
         syncStates: 'courseId',
 
-        answerConfirmations:
+        answerConfirmations: null,
+
+        answerConfirmationsV5:
           '&[taskExternalKey+formReferenceKey], taskExternalKey, formReferenceKey, status, confirmedAt',
       })
       .upgrade(async (transaction) => {
@@ -83,22 +94,14 @@ export class TaskWithFormDatabase extends Dexie {
           delete task.formUrls
         })
 
-        const answerConfirmations = transaction.table('answerConfirmations')
-
-        /*
-         * 旧answerConfirmationsは
-         * ++id / formUrl
-         * だったため、新しい主キー形式へ移行する。
-         *
-         * ただし旧データにはtaskExternalKeyが存在しないため、
-         * 「どの配布項目のFormか」を復元できない。
-         *
-         * この情報は正確に復元できないため、旧回答確認結果は
-         * 新スキーマへ持ち込まず破棄する。
-         *
-         * Classroom再同期後、Form確認を再実行することで復旧できる。
-         */
-        await answerConfirmations.clear()
+        await tasks.toCollection().modify((task) => {
+          task.externalKey = JSON.stringify([
+            'google-classroom',
+            task.courseId,
+            task.itemType,
+            task.itemId,
+          ])
+        })
       })
   }
 }
