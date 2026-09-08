@@ -62,6 +62,7 @@ describe('TaskList', () => {
     })
 
     expect(wrapper.text()).toContain('C言語レポート')
+    expect(wrapper.text()).toContain('新着順')
     const accent = wrapper.get('.task-list-accent').attributes('style')
     expect(accent).toContain('background-color')
   })

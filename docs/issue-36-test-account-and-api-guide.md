@@ -43,17 +43,22 @@
 
 ### 2.2 ClassroomとFormのケースを作る
 
-Classroom APIは、生徒役が参加している`ACTIVE`コースと、その中の`PUBLISHED`課題だけを取得します。下書き、アーカイブ済みコース、教師としてだけ参加しているコースは、この確認データの代用になりません。
+Classroom APIは、生徒役が参加している`ACTIVE`コースと、その中の`PUBLISHED`課題・資料・ストリーム投稿を取得します。下書き、アーカイブ済みコース、教師としてだけ参加しているコースは、この確認データの代用になりません。
 
 次の最小構成を作ります。タイトルにはケース番号を付け、実データと混ざらないようにします。
 
-| ケース | 準備内容                                                       | `coursework/forms`の期待結果          |
-| ------ | -------------------------------------------------------------- | ------------------------------------- |
-| C0     | `ACTIVE`コースを1つ作り、課題を0件にする                       | このコース由来の`courseWork`要素は0件 |
-| C1     | 別の`ACTIVE`コースに、添付なしの通常課題を`PUBLISHED`で1件作る | 課題が1件、`forms: []`                |
-| C2     | 同じコースに、Form以外の資料だけを添付した課題を1件作る        | 課題が1件、`forms: []`                |
-| C3     | Google Formを1件添付した課題を1件作る                          | 課題が1件、`forms`が1件               |
-| C4     | 異なるGoogle Formを2件添付した課題を1件作る                    | 課題が1件、`forms`が2件               |
+| ケース | 準備内容                                                       | `courses/items`の期待結果                    |
+| ------ | -------------------------------------------------------------- | -------------------------------------------- |
+| C0     | `ACTIVE`コースを1つ作り、配布を0件にする                       | コースが`items: []`で返る                    |
+| C1     | 別の`ACTIVE`コースに、添付なしの通常課題を`PUBLISHED`で1件作る | 課題が1件、`forms: []`                       |
+| C2     | 同じコースに、Form以外の資料だけを添付した課題を1件作る        | 課題が1件、`forms: []`                       |
+| C3     | Google Formを1件添付した課題を1件作る                          | 課題が1件、resolved Formが1件                |
+| C4     | 異なるGoogle Formを2件添付した課題を1件作る                    | 課題が1件、UIカードがFormごとに2件           |
+| C5     | Google Formを添付した「資料」を1件作る                         | 資料が1件、resolved Formが1件                |
+| C6     | Google Formを添付したストリーム投稿を1件作る                   | 投稿が1件、resolved Formが1件                |
+| C7     | Form URLをストリーム投稿本文へ記載する                         | 投稿が1件、resolved Formが1件                |
+| C8     | `forms.gle` URLをストリーム投稿本文へ記載する                  | 解決成功時はresolved、失敗時はunresolved     |
+| C9     | 同じFormを異なる配布へ置く                                     | 配布ごとに表示され、回答状態はまとめて変わる |
 
 各課題は生徒役から閲覧できることをブラウザで確認します。`description`、期限、Classroomの課題リンクは任意ですが、省略時のAPIレスポンスも確認したい場合はC1では設定せず、C3では設定するなどケースを分けます。
 
@@ -97,10 +102,12 @@ Gmail実装は送信者`forms-receipts-noreply@google.com`とForm IDで候補を
 
 `GOOGLE_CLIENT_ID`と`GOOGLE_CLIENT_SECRET`は必須です。`GOOGLE_REDIRECT_URI`と`FRONTEND_ORIGIN`を省略した場合、上記の値が既定値になります。Cloud側のURIとローカル値のscheme、host、port、path、末尾スラッシュが1文字でも違うとOAuthは成功しません。
 
-現行OAuthが要求するscopeは、次の3つだけです。すべて読み取り専用です。
+現行OAuthが要求するscopeは、次の5つだけです。すべて読み取り専用です。
 
 - `https://www.googleapis.com/auth/classroom.courses.readonly`
 - `https://www.googleapis.com/auth/classroom.coursework.me.readonly`
+- `https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly`
+- `https://www.googleapis.com/auth/classroom.announcements.readonly`
 - `https://www.googleapis.com/auth/gmail.readonly`
 
 バックエンドは過去のセッションとの互換性のため`classroom.student-submissions.me.readonly`も課題取得scopeとして受け入れますが、現行の認可URLは要求しません。検証用Cloud設定に書き足す必要はありません。
@@ -114,7 +121,7 @@ OAuthは`access_type=online`で、リフレッシュトークンを保存しま�
 1. アプリでログアウトする。
 2. 生徒役Googleアカウントの「サードパーティ製のアプリとサービスへの接続」から、この検証用OAuthアプリのアクセスを削除する。
 3. ブラウザの検証用プロファイルだけを使い、`http://localhost:5173/login`から再ログインする。
-4. 同意画面に3つのread-only権限が表示されることを確認して許可する。
+4. 同意画面に5つのread-only権限が表示されることを確認して許可する。
 
 ## 4. ログインと安全なcurl確認
 
@@ -127,7 +134,7 @@ OAuthログインはブラウザ操作が必須です。`GET /api/auth/google`�
 ブラウザ内で確認するだけなら、DevToolsのConsoleから次のように実行できます。Cookie値はJavaScriptへ公開されません。
 
 ```js
-await fetch('/api/classroom/coursework/forms', {
+await fetch('/api/classroom/courses/items', {
   credentials: 'same-origin',
 }).then(async (response) => ({
   httpStatus: response.status,
@@ -161,43 +168,49 @@ curl --silent --show-error --include \
 
 作業終了時はshellを終了すれば`trap`がCookie jarを削除します。途中で終了する場合は`rm -f -- "$cookie_jar"`を実行してからshellを閉じます。
 
-## 5. `GET /api/classroom/coursework/forms`
+## 5. `GET /api/classroom/courses/items`
 
 ### 入力
 
 - Method: `GET`
-- Path: `/api/classroom/coursework/forms`
+- Path: `/api/classroom/courses/items`
 - Query/body: なし
 - 認証: `taskwithform.sid` Cookie
-- 必要scope: `classroom.courses.readonly`と、`classroom.coursework.me.readonly`または互換scopeの`classroom.student-submissions.me.readonly`
+- 必要scope: `classroom.courses.readonly`、`classroom.courseworkmaterials.readonly`、`classroom.announcements.readonly`と、`classroom.coursework.me.readonly`または互換scopeの`classroom.student-submissions.me.readonly`
 
 ```bash
 curl --silent --show-error --include \
   --cookie "$cookie_jar" \
-  http://localhost:3000/api/classroom/coursework/forms
+  http://localhost:3000/api/classroom/courses/items
 ```
 
 ### 成功レスポンス
 
-HTTP `200`で、対象は生徒役が参加する`ACTIVE`コース内の`PUBLISHED`課題です。Formなしの課題も返ります。
+HTTP `200`で、対象は生徒役が参加する`ACTIVE`コース内の`PUBLISHED`課題・資料・ストリーム投稿です。Formなしの課題は返りますが、資料と投稿はForm候補を含む項目だけが返ります。
 
 ```json
 {
-  "courseWork": [
+  "courses": [
     {
-      "courseId": "test-course-id",
-      "courseName": "検証用コース",
-      "courseWorkId": "test-work-id",
-      "courseWorkType": "ASSIGNMENT",
-      "title": "C3 検証用1 Form",
-      "description": "dummy",
-      "alternateLink": "https://classroom.google.com/c/example/a/example/details",
-      "dueDate": "2026-09-30",
-      "forms": [
+      "id": "test-course-id",
+      "name": "検証用コース",
+      "items": [
         {
-          "formUrl": "https://docs.google.com/forms/d/test-form-id/viewform",
-          "formId": "test-form-id",
-          "formIdType": "standard"
+          "itemId": "test-work-id",
+          "itemType": "courseWork",
+          "courseWorkType": "ASSIGNMENT",
+          "title": "C3 検証用1 Form",
+          "creationTime": "2026-09-01T00:00:00.000Z",
+          "dueDate": "2026-09-30",
+          "forms": [
+            {
+              "resolution": "resolved",
+              "sourceUrl": "https://docs.google.com/forms/d/test-form-id/viewform",
+              "formUrl": "https://docs.google.com/forms/d/test-form-id/viewform",
+              "formId": "test-form-id",
+              "title": "検証用Form"
+            }
+          ]
         }
       ]
     }
@@ -205,9 +218,9 @@ HTTP `200`で、対象は生徒役が参加する`ACTIVE`コース内の`PUBLISH
 }
 ```
 
-`description`、`alternateLink`、`dueDate`はGoogle側に値がない場合は省略されます。`forms`は常に配列です。`formIdType`は標準URLの`standard`または公開URLの`published`です。`formId`はForms APIのcanonical resource IDではなく、Form URL中のopaque identifierです。
+`description`、`alternateLink`、`dueDate`、Formの`title`はGoogle側に値がない場合は省略されます。`forms`は常に配列です。Formは添付、リンク、課題・資料の説明、投稿本文から検出されます。`forms.gle`を安全に展開できない場合は`resolution: "unresolved"`と`sourceUrl`を返し、回答確認APIは呼びません。
 
-C0の空コースはこのAPIだけではコース要素として現れません。必要なら`GET /api/classroom/courses/count`で`ACTIVE`コース総数を併せて確認し、C0とデータ入りコースの合計件数になっていることを確認します。
+課題・資料・投稿が0件のACTIVEコースも`items: []`として返ります。`GET /api/classroom/courses/count`の件数とコース要素数が一致することを確認します。
 
 ### エラー
 
@@ -287,8 +300,8 @@ HTTP `200`で次のいずれかを返します。
 
 1. 生徒役のGoogleアカウントから検証用OAuthアプリのアクセスを削除する。
 2. 再ログインし、Googleの同意画面が権限ごとの選択を許す場合だけ、Classroomを許可してGmailを許可しない。
-3. `GET /api/classroom/coursework/forms`が`200`、`GET /api/gmail/connection`または回答確認APIが`403 gmail_forbidden`になることを確認する。
-4. 確認後は連携を再度削除し、3つのscopeすべてへ再同意する。
+3. `GET /api/classroom/courses/items`が`200`、`GET /api/gmail/connection`または回答確認APIが`403 gmail_forbidden`になることを確認する。
+4. 確認後は連携を再度削除し、5つのscopeすべてへ再同意する。
 
 組織ポリシーやGoogleの同意画面仕様により部分同意を選べない場合、実アカウントの設定やトークンを改変して再現してはいけません。その環境では、管理者がGmailを禁止した専用テストユーザーで確認するか、既存の自動テスト結果で権限分岐を確認し、実環境では「再現不可」と記録します。
 
@@ -321,8 +334,9 @@ HTTP `200`で次のいずれかを返します。
 | `/login?error=oauth_failed`     | code欠落、交換失敗、期限不正                        | redirect URI、client設定、時刻を確認し、資格情報を共有せず再試行する |
 | `classroom_scope_missing`       | 古い同意、部分同意                                  | OAuth連携を削除し、必要scopeへ再同意する                             |
 | `classroom_forbidden`           | 生徒役がコースへ参加済みか、API・組織ポリシー       | 専用コースの所属とCloud設定を責任者が確認する                        |
-| 課題が返らない                  | コースが`ACTIVE`、課題が`PUBLISHED`、生徒として参加 | 下書きを公開し、生徒役ブラウザでも閲覧できることを確認する           |
-| `forms: []`                     | Classroom課題のmaterialsにGoogle Formがあるか       | URLを説明欄へ貼るだけでなく、Form資料として添付して公開する          |
+| 配布が返らない                  | コースが`ACTIVE`、配布が`PUBLISHED`、生徒として参加 | 下書きを公開し、生徒役ブラウザでも閲覧できることを確認する           |
+| `forms: []`                     | 添付・リンク・本文のURLがGoogle Formか              | 対応ドメインとURL形式、短縮URLの遷移先を確認する                     |
+| `resolution: unresolved`        | `forms.gle`の一時障害、redirect先、timeout          | カードの「リンクを再確認」から全体同期を有限回だけ再試行する         |
 | G1が`unreviewable`              | 回答控えが生徒役Gmailへ届いたか、同じForm IDか      | 送信者とFormリンクをGmail画面内だけで確認する。本文は転記しない      |
 | G1が`needsReview`               | 同じFormの控えが複数、メール形式が解析不能          | 重複回答の有無をGmail画面内で確認し、必要なら専用Formを作り直す      |
 | `gmail_forbidden`               | Gmail scope、Gmail API、管理ポリシー                | OAuth再同意、Cloud設定、管理者ポリシーの順に確認する                 |

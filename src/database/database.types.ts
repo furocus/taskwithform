@@ -9,6 +9,23 @@ export type TaskStatus = 'unsubmitted' | 'submitted' | 'untracked'
 export type ClassroomCourseWorkType =
   'ASSIGNMENT' | 'SHORT_ANSWER_QUESTION' | 'MULTIPLE_CHOICE_QUESTION'
 
+export type ClassroomItemType =
+  'courseWork' | 'courseWorkMaterial' | 'announcement'
+
+export type TaskFormReference =
+  | {
+      resolution: 'resolved'
+      sourceUrl: string
+      formId: string
+      formUrl: string
+      title?: string
+    }
+  | {
+      resolution: 'unresolved'
+      sourceUrl: string
+      title?: string
+    }
+
 export interface TaskRecord {
   id: string
   externalKey: string
@@ -16,14 +33,21 @@ export interface TaskRecord {
 
   courseId: string
   courseName: string
-  courseWorkId: string
-  courseWorkType: ClassroomCourseWorkType
+  itemType?: ClassroomItemType
+  itemId?: string
+  creationTime?: IsoDateTime
+
+  /** Legacy aliases retained while v2 records are migrated in-place. */
+  courseWorkId?: string
+  courseWorkType?: ClassroomCourseWorkType
 
   subjectName: string
   title: string
   description?: string
   alternateLink?: string
-  formUrls: string[]
+  forms?: TaskFormReference[]
+  /** Legacy URL projection for old consumers and answer-confirmation code. */
+  formUrls?: string[]
 
   dueDate?: DateOnly
   status: TaskStatus
@@ -35,7 +59,28 @@ export interface SyncState {
   fetchedDate: DateOnly
 }
 
-export type TaskRecordInput = Omit<TaskRecord, 'id' | 'externalKey' | 'source'>
+export type TaskRecordInput = Omit<
+  TaskRecord,
+  | 'id'
+  | 'externalKey'
+  | 'source'
+  | 'itemType'
+  | 'itemId'
+  | 'creationTime'
+  | 'forms'
+> &
+  Partial<
+    Pick<
+      TaskRecord,
+      | 'itemType'
+      | 'itemId'
+      | 'creationTime'
+      | 'forms'
+      | 'courseWorkId'
+      | 'courseWorkType'
+      | 'formUrls'
+    >
+  >
 
 export interface CourseTaskSnapshot {
   courseId: string

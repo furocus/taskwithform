@@ -13,6 +13,7 @@ const props = defineProps<{
   task: Task
   onTaskClick?: (taskId: string) => void
   onConfirmAnswer?: (taskId: string) => void
+  onRetry?: () => void
   isConfirming?: boolean
   confirmationError?: ConfirmationErrorLike | null
 }>()
@@ -20,9 +21,16 @@ const props = defineProps<{
 const courseColors = computed(() => getCourseColors(props.task.courseId))
 const isInteractive = computed(() => Boolean(props.onTaskClick))
 const answerStatus = computed(() => props.task.answerStatus ?? 'unreviewed')
-const hasForm = computed(() => (props.task.formUrls ?? []).length > 0)
+const hasResolvedForm = computed(
+  () =>
+    props.task.form?.resolution === 'resolved' ||
+    (props.task.form === undefined && (props.task.formUrls ?? []).length > 0),
+)
+const hasUnresolvedForm = computed(
+  () => props.task.form?.resolution === 'unresolved',
+)
 const isConfirmDisabled = computed(
-  () => Boolean(props.isConfirming) || !hasForm.value,
+  () => Boolean(props.isConfirming) || !hasResolvedForm.value,
 )
 
 const confirmationMessage = computed(() => {
@@ -44,6 +52,12 @@ const confirmButtonLabel = computed(() => {
     return '再試行'
   return '回答を確認'
 })
+
+const formTitle = computed(() =>
+  props.task.formTitle && props.task.formTitle.trim() !== ''
+    ? props.task.formTitle
+    : 'Google Form',
+)
 
 const handleClick = () => {
   props.onTaskClick?.(props.task.id)
@@ -106,6 +120,18 @@ const handleConfirmClick = (event: MouseEvent) => {
                 {{ props.task.title }}
               </h3>
               <p
+                v-if="props.task.form"
+                class="mt-1 break-words text-[11px] font-medium text-[color:var(--color-text-secondary)] sm:text-sm"
+              >
+                Form: {{ formTitle }}
+              </p>
+              <p
+                v-if="props.task.sourceLabel"
+                class="mt-1 break-words text-[10px] text-[color:var(--color-text-tertiary)] sm:text-xs"
+              >
+                {{ props.task.sourceLabel }}
+              </p>
+              <p
                 class="mt-1 break-words text-[11px] text-[color:var(--color-text-secondary)] sm:text-sm"
               >
                 提出期限: {{ props.task.dueDate }}
@@ -126,7 +152,7 @@ const handleConfirmClick = (event: MouseEvent) => {
             </p>
 
             <div
-              v-if="hasForm"
+              v-if="hasResolvedForm"
               class="task-confirm-wrap mt-0.5 flex max-w-full flex-col items-end gap-1"
             >
               <button
@@ -150,6 +176,24 @@ const handleConfirmClick = (event: MouseEvent) => {
               >
                 {{ confirmationMessage }}
               </p>
+            </div>
+            <div
+              v-else-if="hasUnresolvedForm"
+              class="task-confirm-wrap mt-0.5 flex max-w-full flex-col items-end gap-1"
+            >
+              <p
+                class="max-w-full text-right text-[10px] leading-relaxed text-[color:var(--color-danger)] sm:text-xs"
+              >
+                Formリンクを確認できません
+              </p>
+              <button
+                data-test="retry-form-link"
+                type="button"
+                class="inline-flex w-auto max-w-full items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[10px] font-semibold leading-none text-blue-600 sm:px-3 sm:text-xs"
+                @click.stop="props.onRetry"
+              >
+                リンクを再確認
+              </button>
             </div>
           </div>
         </div>

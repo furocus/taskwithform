@@ -37,7 +37,7 @@ const courseColors = computed(() => getCourseColors(props.courseId))
 <template>
   <section class="space-y-4">
     <div class="flex items-center justify-between">
-      <p class="section-caption">期限が近い順</p>
+      <p class="section-caption">新着順</p>
       <span class="text-xs text-[color:var(--color-text-tertiary)]">
         {{ props.tasks.length }}件
       </span>
@@ -92,6 +92,7 @@ const courseColors = computed(() => getCourseColors(props.courseId))
             :task="{ ...task, courseId: task.courseId ?? props.courseId }"
             :on-task-click="props.onTaskClick"
             :on-confirm-answer="props.onConfirmAnswer"
+            :on-retry="props.onRetry"
             :is-confirming="props.confirmingTaskId === task.id"
             :confirmation-error="props.confirmationErrors?.[task.id] ?? null"
           />

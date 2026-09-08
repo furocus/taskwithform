@@ -91,4 +91,54 @@ describe('TaskCard', () => {
       false,
     )
   })
+
+  it('shows the distribution title, Form title, and source label for a resolved Form', () => {
+    const wrapper = mount(TaskCard, {
+      props: {
+        task: {
+          ...sampleTask,
+          title: '配布タイトル',
+          formTitle: '回答フォーム',
+          sourceLabel: '資料',
+          form: {
+            resolution: 'resolved',
+            sourceUrl: 'https://forms.gle/example',
+            formId: 'form-id',
+            formUrl: 'https://docs.google.com/forms/d/form-id/viewform',
+            title: '回答フォーム',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('配布タイトル')
+    expect(wrapper.text()).toContain('回答フォーム')
+    expect(wrapper.text()).toContain('資料')
+    expect(wrapper.get('[data-test="confirm-answer"]').text()).toContain(
+      '回答を確認',
+    )
+  })
+
+  it('shows an unresolved Form message and retries the Classroom sync without a confirmation button', async () => {
+    const onRetry = vi.fn()
+    const wrapper = mount(TaskCard, {
+      props: {
+        task: {
+          ...sampleTask,
+          form: {
+            resolution: 'unresolved',
+            sourceUrl: 'https://forms.gle/broken',
+          },
+        },
+        onRetry,
+        onConfirmAnswer: vi.fn(),
+      },
+    })
+
+    expect(wrapper.text()).toContain('Formリンクを確認できません')
+    expect(wrapper.text()).toContain('リンクを再確認')
+    expect(wrapper.find('[data-test="confirm-answer"]').exists()).toBe(false)
+    await wrapper.get('[data-test="retry-form-link"]').trigger('click')
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
 })

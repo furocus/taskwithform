@@ -8,6 +8,8 @@ import {
 import {
   createGoogleOAuthService,
   GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_ANNOUNCEMENTS_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_COURSEWORK_MATERIALS_READONLY_SCOPE,
   GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
   GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
   GOOGLE_GMAIL_READONLY_SCOPE,
@@ -502,6 +504,72 @@ export function createRequestHandler({
         try {
           const courses =
             await getClassroomService().listActiveCoursesWithCourseWork(
+              session.accessToken,
+            )
+          sendJson(response, 200, { courses })
+        } catch (error) {
+          if (error instanceof ClassroomRequestError && error.status === 401) {
+            sendSessionExpired(response, sessionId)
+            return
+          }
+
+          if (error instanceof ClassroomRequestError && error.status === 403) {
+            sendJson(response, 403, {
+              error: {
+                code: 'classroom_forbidden',
+                message: 'Google Classroom access was denied.',
+              },
+            })
+            return
+          }
+
+          if (error instanceof ClassroomRequestError) {
+            sendJson(response, 502, {
+              error: {
+                code: 'classroom_unavailable',
+                message: 'Google Classroom is temporarily unavailable.',
+              },
+            })
+            return
+          }
+
+          throw error
+        }
+        return
+      }
+
+      if (
+        request.method === 'GET' &&
+        requestUrl.pathname === '/api/classroom/courses/items'
+      ) {
+        const authentication = requireAuthentication(request, response)
+        if (authentication === undefined) {
+          return
+        }
+        const { sessionId, session } = authentication
+
+        if (
+          !hasRequiredScopes(session, [
+            GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+            GOOGLE_CLASSROOM_COURSEWORK_MATERIALS_READONLY_SCOPE,
+            GOOGLE_CLASSROOM_ANNOUNCEMENTS_READONLY_SCOPE,
+          ]) ||
+          !hasAnyRequiredScope(session, [
+            GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
+            GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
+          ])
+        ) {
+          sendScopeForbidden(
+            response,
+            'classroom_scope_missing',
+            'Google Classroomの追加権限が必要です。再ログインして権限を許可してください。',
+          )
+          return
+        }
+
+        try {
+          const courses =
+            await getClassroomService().listActiveCoursesWithItems(
               session.accessToken,
             )
           sendJson(response, 200, { courses })

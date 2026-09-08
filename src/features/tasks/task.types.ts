@@ -6,10 +6,24 @@ export interface Task {
   id: string
   index: number
   title: string
+  /** The distribution title, retained separately when a Form title exists. */
+  distributionTitle?: string
+  formTitle?: string
+  sourceLabel?: string
   subject: string
   courseId?: string
+  itemType?: 'courseWork' | 'courseWorkMaterial' | 'announcement'
+  itemId?: string
+  creationTime?: string
   dueDate: string
   warning: string
   answerStatus: AnswerStatus
   formUrls?: string[]
+  form?: {
+    resolution: 'resolved' | 'unresolved'
+    sourceUrl: string
+    formId?: string
+    formUrl?: string
+    title?: string
+  }
 }

@@ -4,6 +4,10 @@ export const GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE =
   'https://www.googleapis.com/auth/classroom.courses.readonly'
 export const GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE =
   'https://www.googleapis.com/auth/classroom.coursework.me.readonly'
+export const GOOGLE_CLASSROOM_COURSEWORK_MATERIALS_READONLY_SCOPE =
+  'https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly'
+export const GOOGLE_CLASSROOM_ANNOUNCEMENTS_READONLY_SCOPE =
+  'https://www.googleapis.com/auth/classroom.announcements.readonly'
 export const GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE =
   'https://www.googleapis.com/auth/classroom.student-submissions.me.readonly'
 export const GOOGLE_GMAIL_READONLY_SCOPE =
@@ -12,6 +16,8 @@ export const GOOGLE_GMAIL_READONLY_SCOPE =
 export const GOOGLE_OAUTH_SCOPES = [
   GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
   GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_COURSEWORK_MATERIALS_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_ANNOUNCEMENTS_READONLY_SCOPE,
   GOOGLE_GMAIL_READONLY_SCOPE,
 ]
 

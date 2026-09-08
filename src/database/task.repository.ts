@@ -1,16 +1,35 @@
 import type {
+  ClassroomItemType,
   CourseTaskSnapshot,
   SyncState,
+  TaskFormReference,
   TaskRecord,
   TaskRecordInput,
 } from './database.types'
 import { database as defaultDatabase, type TaskWithFormDatabase } from './db'
 
 export function createExternalKey(
-  courseId: string,
-  courseWorkId: string,
+  sourceOrCourseId: string,
+  courseIdOrItemType: ClassroomItemType | string,
+  itemId?: string,
+  explicitItemId?: string,
 ): string {
-  return JSON.stringify(['google-classroom', courseId, courseWorkId])
+  if (explicitItemId !== undefined) {
+    return JSON.stringify([
+      sourceOrCourseId,
+      courseIdOrItemType,
+      itemId,
+      explicitItemId,
+    ])
+  }
+  const courseId = sourceOrCourseId
+  const itemTypeOrId = courseIdOrItemType
+  // The two-argument form keeps callers compiled against the pre-v3 helper
+  // working. New records always use the source/course/type/item tuple.
+  if (itemId === undefined) {
+    return JSON.stringify(['google-classroom', courseId, itemTypeOrId])
+  }
+  return JSON.stringify(['google-classroom', courseId, itemTypeOrId, itemId])
 }
 
 function toTaskRecord(
@@ -18,18 +37,44 @@ function toTaskRecord(
   id: string,
   externalKey: string,
 ): TaskRecord {
+  const itemType = input.itemType ?? 'courseWork'
+  const itemId = input.itemId ?? input.courseWorkId
+  if (itemId === undefined) {
+    throw new Error('Task input must include itemId.')
+  }
+  const creationTime = input.creationTime ?? '1970-01-01T00:00:00.000Z'
+  const forms: TaskFormReference[] =
+    input.forms ??
+    (input.formUrls ?? []).map((formUrl) => ({
+      resolution: 'unresolved',
+      sourceUrl: formUrl,
+    }))
   const record: TaskRecord = {
     id,
     externalKey,
     source: 'google-classroom',
     courseId: input.courseId,
     courseName: input.courseName,
-    courseWorkId: input.courseWorkId,
-    courseWorkType: input.courseWorkType,
+    itemType,
+    itemId,
+    creationTime,
     subjectName: input.subjectName,
     title: input.title,
-    formUrls: [...input.formUrls],
+    forms: forms.map((form) => ({ ...form })),
+    formUrls: [
+      ...(input.formUrls ??
+        forms.flatMap((form) =>
+          form.resolution === 'resolved' ? [form.formUrl] : [],
+        )),
+    ],
     status: input.status,
+  }
+
+  if (itemType === 'courseWork') {
+    record.courseWorkId = input.courseWorkId ?? itemId
+    if (input.courseWorkType !== undefined) {
+      record.courseWorkType = input.courseWorkType
+    }
   }
 
   if (input.description !== undefined) {
@@ -104,13 +149,37 @@ function compareTaskTieBreaker(a: TaskRecord, b: TaskRecord): number {
     return courseNameComparison
   }
 
-  const courseWorkIdComparison = a.courseWorkId.localeCompare(b.courseWorkId)
+  const courseWorkIdComparison = (
+    a.itemId ??
+    a.courseWorkId ??
+    ''
+  ).localeCompare(b.itemId ?? b.courseWorkId ?? '')
 
   if (courseWorkIdComparison !== 0) {
     return courseWorkIdComparison
   }
 
   return a.externalKey.localeCompare(b.externalKey)
+}
+
+function compareTasksByCreationTimeDesc(a: TaskRecord, b: TaskRecord): number {
+  const aTime =
+    a.creationTime === undefined
+      ? Number.NEGATIVE_INFINITY
+      : Date.parse(a.creationTime)
+  const bTime =
+    b.creationTime === undefined
+      ? Number.NEGATIVE_INFINITY
+      : Date.parse(b.creationTime)
+  const creationOrder = bTime - aTime
+  if (!Number.isNaN(creationOrder) && creationOrder !== 0) return creationOrder
+  if (a.creationTime !== b.creationTime) {
+    const lexicalOrder = (b.creationTime ?? '').localeCompare(
+      a.creationTime ?? '',
+    )
+    if (lexicalOrder !== 0) return lexicalOrder
+  }
+  return compareTaskTieBreaker(a, b)
 }
 
 export class TaskRepository {
@@ -150,10 +219,12 @@ export class TaskRepository {
           )
         }
 
-        const externalKey = createExternalKey(
-          input.courseId,
-          input.courseWorkId,
-        )
+        const itemType = input.itemType ?? 'courseWork'
+        const itemId = input.itemId ?? input.courseWorkId
+        if (itemId === undefined) {
+          throw new Error('Snapshot task must include itemId.')
+        }
+        const externalKey = createExternalKey(input.courseId, itemType, itemId)
 
         if (incomingExternalKeys.has(externalKey)) {
           throw new Error(`Snapshot contains duplicate task "${externalKey}".`)
@@ -240,7 +311,7 @@ export class TaskRepository {
       .equals('unsubmitted')
       .toArray()
 
-    return tasks.sort(compareTasksByDueDate)
+    return tasks.sort(compareTasksByCreationTimeDesc)
   }
 
   async getUnsubmittedTasksInDateRange(
