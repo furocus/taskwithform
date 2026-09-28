@@ -66,6 +66,7 @@ export class AnswerConfirmationRepository {
   async getByFormReferenceKey(
     formReferenceKey: string,
   ): Promise<AnswerConfirmationRecord[]> {
+    this.assertFormReferenceKey(formReferenceKey)
     return this.database.answerConfirmations
       .where('formReferenceKey')
       .equals(formReferenceKey)

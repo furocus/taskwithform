@@ -3,7 +3,10 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { AnswerConfirmationRepository } from './answerConfirmation.repository'
-import { createFormReferenceKey } from './database.types'
+import {
+  createFormReferenceKey,
+  type TaskFormReference,
+} from './database.types'
 import { TaskWithFormDatabase } from './db'
 
 function createDatabase(): TaskWithFormDatabase {
@@ -36,7 +39,7 @@ describe('AnswerConfirmationRepository', () => {
       createFormReferenceKey({
         resolution: 'resolved',
         sourceUrl: 'https://forms.google.com/form-1',
-      }),
+      } as TaskFormReference),
     ).toThrow('Form ID')
     expect(() =>
       createFormReferenceKey({
@@ -99,5 +102,8 @@ describe('AnswerConfirmationRepository', () => {
         confirmedAt: '2026-09-08T00:00:00.000Z',
       }),
     ).rejects.toThrow('canonical')
+    await expect(repository.getByFormReferenceKey('form-1')).rejects.toThrow(
+      'canonical',
+    )
   })
 })

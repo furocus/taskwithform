@@ -64,6 +64,7 @@ describe('TaskWithFormDatabase migrations', () => {
         id: taskId,
         itemType: 'courseWork',
         itemId: 'work-1',
+        courseWorkType: 'ASSIGNMENT',
         externalKey: '["google-classroom","course-1","courseWork","work-1"]',
       })
       await expect(database.answerConfirmations.count()).resolves.toBe(0)

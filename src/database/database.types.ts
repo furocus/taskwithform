@@ -30,21 +30,22 @@ export type ClassroomCourseWorkType =
 export type TaskFormReference =
   ResolvedTaskFormReference | UnresolvedTaskFormReference
 
-export interface ResolvedTaskFormReference {
+export type ResolvedTaskFormReference =
+  StandardTaskFormReference | PublishedTaskFormReference
+
+interface ResolvedTaskFormReferenceBase {
   resolution: 'resolved'
   sourceUrl: string
+}
 
-  /**
-   * Google Formsのstandard Form ID。
-   * publishedFormIdとは別のID空間として扱う。
-   */
-  standardFormId?: string
-
-  /**
-   * Google Formsのpublished Form ID。
-   * standardFormIdとは別のID空間として扱う。
-   */
+export interface StandardTaskFormReference extends ResolvedTaskFormReferenceBase {
+  standardFormId: string
   publishedFormId?: string
+}
+
+export interface PublishedTaskFormReference extends ResolvedTaskFormReferenceBase {
+  standardFormId?: string
+  publishedFormId: string
 }
 
 export interface UnresolvedTaskFormReference {
@@ -99,6 +100,9 @@ export interface TaskRecord {
 
   /** 配布項目の作成日時 */
   creationTime: IsoDateTime
+
+  /** 課題の種別（資料・お知らせには存在しない） */
+  courseWorkType?: ClassroomCourseWorkType
 
   subjectName: string
   title: string

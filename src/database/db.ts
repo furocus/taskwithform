@@ -90,7 +90,6 @@ export class TaskWithFormDatabase extends Dexie {
           }
 
           delete task.courseWorkId
-          delete task.courseWorkType
           delete task.formUrls
         })
 
