@@ -1,12 +1,37 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { getCalendarDays } from '../features/calendar/calendar.utils'
 import { useCalendar } from '../features/calendar/useCalendar'
 import { getCourseColors } from '../features/tasks/task.utils'
+import { isExistingDateOnly } from '../shared/utils/date'
 
 const now = new Date()
 const displayedMonth = ref(new Date(now.getFullYear(), now.getMonth(), 1))
 const { status, tasksByDate, reload } = useCalendar(displayedMonth)
+const route = useRoute()
+
+const monthFromQuery = (value: unknown): Date => {
+  const current = new Date()
+  if (!isExistingDateOnly(value)) {
+    return new Date(current.getFullYear(), current.getMonth(), 1)
+  }
+
+  const [year, month] = value.split('-').map(Number)
+  return new Date(year!, month! - 1, 1)
+}
+
+// A notification carries a day, while the calendar displays a month. Watching
+// the query also handles a second notification click while already on this
+// route and deliberately rejects malformed/rolled-over dates.
+watch(
+  () => route?.query.date,
+  (date) => {
+    const nextMonth = monthFromQuery(date)
+    displayedMonth.value = nextMonth
+  },
+  { immediate: true },
+)
 
 const monthLabel = computed(
   () =>

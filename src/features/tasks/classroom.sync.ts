@@ -1,23 +1,20 @@
 import type {
   CourseTaskSnapshot,
   DateOnly,
-  TaskRecord,
+  TaskFormReference,
   TaskRecordInput,
 } from '../../database/database.types'
 import {
-  createExternalKey,
   taskRepository as defaultTaskRepository,
   type TaskRepository,
 } from '../../database/task.repository'
+import { createFormReferenceKey } from '../../database/formReference'
 import { toDateOnly } from '../../shared/utils/date'
 import {
-  getClassroomCourses,
-  type ClassroomCourse,
-  type ClassroomCourseWork,
+  getClassroomItems,
+  type ClassroomDistributionItem,
+  type ClassroomItemsCourse,
 } from './classroom.api'
-
-/** The locally owned part of a task, which a re-sync must not overwrite. */
-export type LocalTaskState = Pick<TaskRecord, 'status' | 'submittedAt'>
 
 type FetchImplementation = typeof fetch
 
@@ -34,61 +31,66 @@ export interface SyncClassroomCoursesResult {
 }
 
 function toTaskRecordInput(
-  course: ClassroomCourse,
-  courseWork: ClassroomCourseWork,
-  localState: LocalTaskState | undefined,
+  course: ClassroomItemsCourse,
+  item: ClassroomDistributionItem,
 ): TaskRecordInput {
+  // The stored `forms` array is the only representation of the Forms, so the
+  // same Form attached twice to one item must not become two entries: they
+  // would share a Form reference key and duplicate the UI card.
+  const formsByKey = new Map<string, TaskFormReference>()
+  for (const form of item.forms) {
+    const key =
+      form.resolution === 'resolved'
+        ? createFormReferenceKey(form)
+        : `unresolved:${form.sourceUrl}`
+    if (!formsByKey.has(key)) formsByKey.set(key, { ...form })
+  }
+  const forms: TaskFormReference[] = [...formsByKey.values()]
   const input: TaskRecordInput = {
     courseId: course.id,
     courseName: course.name,
-    courseWorkId: courseWork.courseWorkId,
-    courseWorkType: courseWork.courseWorkType,
+    itemType: item.itemType,
+    itemId: item.itemId,
+    creationTime: item.creationTime,
     // Classroom has no separate subject field, so the course name is the subject.
     subjectName: course.name,
-    title: courseWork.title,
-    // The same Form can be attached twice; one confirmation per URL is enough.
-    formUrls: [...new Set(courseWork.forms.map((form) => form.formUrl))],
-    // A task Classroom returns for the first time is unsubmitted until the
-    // user acts on it locally.
-    status: localState?.status ?? 'unsubmitted',
+    title: item.title,
+    forms,
+    // Classroom is authoritative for every distribution item. Items without a
+    // submission record arrive as 'untracked', so nothing is carried over from
+    // the previous record.
+    status: item.submissionStatus,
   }
 
-  if (courseWork.description !== undefined) {
-    input.description = courseWork.description
+  if (item.courseWorkType !== undefined) {
+    input.courseWorkType = item.courseWorkType
   }
 
-  if (courseWork.alternateLink !== undefined) {
-    input.alternateLink = courseWork.alternateLink
+  if (item.description !== undefined) {
+    input.description = item.description
   }
 
-  if (courseWork.dueDate !== undefined) {
-    input.dueDate = courseWork.dueDate
+  if (item.alternateLink !== undefined) {
+    input.alternateLink = item.alternateLink
   }
 
-  if (input.status === 'submitted' && localState?.submittedAt !== undefined) {
-    input.submittedAt = localState.submittedAt
+  if (item.dueDate !== undefined) {
+    input.dueDate = item.dueDate
   }
 
   return input
 }
 
 export function toCourseTaskSnapshot(
-  course: ClassroomCourse,
+  course: ClassroomItemsCourse,
   fetchedDate: DateOnly,
-  localStateByExternalKey: ReadonlyMap<string, LocalTaskState> = new Map(),
 ): CourseTaskSnapshot {
   return {
     courseId: course.id,
     fetchedDate,
-    tasks: course.courseWork.map((courseWork) =>
-      toTaskRecordInput(
-        course,
-        courseWork,
-        localStateByExternalKey.get(
-          createExternalKey(course.id, courseWork.courseWorkId),
-        ),
-      ),
-    ),
+    tasks: course.items
+      .filter((item) => item.itemType === 'courseWork' || item.forms.length > 0)
+      .map((item) => toTaskRecordInput(course, item)),
   }
 }
 
@@ -100,29 +102,19 @@ export function toCourseTaskSnapshot(
  * one transaction, so neither a malformed response nor a failed write can leave
  * a partially synchronized database behind.
  *
- * Local task state is read before that transaction. Nothing else writes tasks
- * today; a future writer would have to be serialized against this sync.
+ * Classroom owns the submission state of every item, so no local task state
+ * survives a synchronization.
  */
 export async function syncClassroomCourses({
   fetchImplementation = fetch,
   repository = defaultTaskRepository,
   now = () => new Date(),
 }: SyncClassroomCoursesOptions = {}): Promise<SyncClassroomCoursesResult> {
-  const courses = await getClassroomCourses(fetchImplementation)
-
-  const storedTasks = await repository.getAllTasks()
-  const localStateByExternalKey = new Map<string, LocalTaskState>(
-    storedTasks.map((task) => [
-      task.externalKey,
-      task.submittedAt === undefined
-        ? { status: task.status }
-        : { status: task.status, submittedAt: task.submittedAt },
-    ]),
-  )
+  const courses = await getClassroomItems(fetchImplementation)
 
   const fetchedDate = toDateOnly(now())
   const snapshots = courses.map((course) =>
-    toCourseTaskSnapshot(course, fetchedDate, localStateByExternalKey),
+    toCourseTaskSnapshot(course, fetchedDate),
   )
 
   await repository.replaceActiveCourseSnapshots(snapshots)

@@ -1,6 +1,7 @@
 import type {
   ClassroomCourseWorkType,
   DateOnly,
+  TaskStatus,
 } from '../../database/database.types'
 import {
   BackendApiError,
@@ -19,34 +20,49 @@ const COURSE_WORK_TYPES: readonly ClassroomCourseWorkType[] = [
   'MULTIPLE_CHOICE_QUESTION',
 ]
 
-/** A Google Form attached to a course work item. */
-export interface ClassroomCourseWorkForm {
-  formId: string
-  formUrl: string
-}
+export type ClassroomDistributionItemType =
+  'courseWork' | 'courseWorkMaterial' | 'announcement'
 
-export interface ClassroomCourseWork {
-  courseWorkId: string
-  courseWorkType: ClassroomCourseWorkType
+export type ClassroomDistributionForm =
+  | {
+      resolution: 'resolved'
+      sourceUrl: string
+      formId: string
+      formIdType: 'standard' | 'published'
+      formUrl: string
+    }
+  | {
+      resolution: 'unresolved'
+      sourceUrl: string
+      reason: 'short_url_resolution_failed'
+    }
+
+export interface ClassroomDistributionItem {
+  itemId: string
+  itemType: ClassroomDistributionItemType
   title: string
-  forms: ClassroomCourseWorkForm[]
   description?: string
   alternateLink?: string
   dueDate?: DateOnly
+  courseWorkType?: ClassroomCourseWorkType
+  /**
+   * Course work carries the Classroom submission state of this user. Course
+   * work assigned to other students only, materials and announcements have no
+   * submission record and are always 'untracked'.
+   */
+  submissionStatus: TaskStatus
+  creationTime: string
+  forms: ClassroomDistributionForm[]
 }
 
-/**
- * One ACTIVE course. `courseWork` is empty for a course that has no published
- * course work, so an empty course is still part of the synchronized list.
- */
-export interface ClassroomCourse {
+export interface ClassroomItemsCourse {
   id: string
   name: string
-  courseWork: ClassroomCourseWork[]
+  items: ClassroomDistributionItem[]
 }
 
-export interface ClassroomCourseListResponse {
-  courses: ClassroomCourse[]
+export interface ClassroomItemsResponse {
+  courses: ClassroomItemsCourse[]
 }
 
 const INVALID_RESPONSE_CODE = 'invalid_backend_response'
@@ -59,13 +75,15 @@ export type ClassroomResponseRejection =
   | 'missing_courses'
   | 'invalid_course'
   | 'duplicate_course'
-  | 'invalid_course_work'
-  | 'duplicate_course_work'
   | 'unknown_course_work_type'
+  | 'invalid_submission_status'
   | 'invalid_due_date'
-  | 'invalid_form'
   | 'missing_required_string'
   | 'invalid_optional_string'
+  | 'invalid_item_type'
+  | 'invalid_creation_time'
+  | 'invalid_form_reference'
+  | 'duplicate_item'
   | 'unreadable_body'
 
 function invalidResponse(
@@ -132,108 +150,249 @@ function readDueDate(value: unknown, status: number): DateOnly | undefined {
   return value
 }
 
-function readForm(value: unknown, status: number): ClassroomCourseWorkForm {
-  if (!isRecord(value)) {
-    throw invalidResponse(status, 'invalid_form')
+function readSubmissionStatus(
+  value: unknown,
+  itemType: ClassroomDistributionItemType,
+  status: number,
+): TaskStatus {
+  if (value === 'untracked') {
+    return value
   }
 
-  return {
-    formId: readRequiredString(value.formId, status),
-    formUrl: readRequiredString(value.formUrl, status),
+  // Only course work carries a Classroom submission record. Anything else
+  // claiming to be submitted or unsubmitted means the contract is broken.
+  if (
+    itemType === 'courseWork' &&
+    (value === 'unsubmitted' || value === 'submitted')
+  ) {
+    return value
   }
+
+  throw invalidResponse(status, 'invalid_submission_status')
 }
 
-function readCourseWork(value: unknown, status: number): ClassroomCourseWork {
-  if (!isRecord(value) || !Array.isArray(value.forms)) {
-    throw invalidResponse(status, 'invalid_course_work')
+function readDistributionItemType(
+  value: unknown,
+  status: number,
+): ClassroomDistributionItemType {
+  if (
+    value !== 'courseWork' &&
+    value !== 'courseWorkMaterial' &&
+    value !== 'announcement'
+  ) {
+    throw invalidResponse(status, 'invalid_item_type')
   }
-
-  const courseWork: ClassroomCourseWork = {
-    courseWorkId: readRequiredString(value.courseWorkId, status),
-    courseWorkType: readCourseWorkType(value.courseWorkType, status),
-    title: readRequiredString(value.title, status),
-    forms: value.forms.map((form) => readForm(form, status)),
-  }
-
-  const description = readOptionalString(value.description, status)
-  if (description !== undefined) {
-    courseWork.description = description
-  }
-
-  const alternateLink = readOptionalString(value.alternateLink, status)
-  if (alternateLink !== undefined) {
-    courseWork.alternateLink = alternateLink
-  }
-
-  const dueDate = readDueDate(value.dueDate, status)
-  if (dueDate !== undefined) {
-    courseWork.dueDate = dueDate
-  }
-
-  return courseWork
+  return value
 }
 
-function readCourse(value: unknown, status: number): ClassroomCourse {
-  if (!isRecord(value) || !Array.isArray(value.courseWork)) {
-    throw invalidResponse(status, 'invalid_course')
+function readCreationTime(value: unknown, status: number): string {
+  const input = typeof value === 'string' ? value : ''
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(
+      input,
+    )
+  const year = match === null ? 0 : Number(match[1])
+  const month = match === null ? 0 : Number(match[2])
+  const day = match === null ? 0 : Number(match[3])
+  const dateIsReal =
+    match !== null &&
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= new Date(Date.UTC(year, month, 0)).getUTCDate()
+  if (!dateIsReal || Number.isNaN(Date.parse(input))) {
+    throw invalidResponse(status, 'invalid_creation_time')
   }
+  return input
+}
 
-  const courseWork = value.courseWork.map((item) =>
-    readCourseWork(item, status),
-  )
-  const courseWorkIds = new Set<string>()
-  for (const item of courseWork) {
-    if (courseWorkIds.has(item.courseWorkId)) {
-      throw invalidResponse(status, 'duplicate_course_work')
+function readDistributionForm(
+  value: unknown,
+  status: number,
+): ClassroomDistributionForm {
+  if (!isRecord(value)) throw invalidResponse(status, 'invalid_form_reference')
+  const resolution = value.resolution
+  const sourceUrl = readRequiredString(value.sourceUrl, status)
+  let source
+  try {
+    source = new URL(sourceUrl)
+  } catch {
+    throw invalidResponse(status, 'invalid_form_reference')
+  }
+  if (
+    source.protocol !== 'https:' ||
+    source.port !== '' ||
+    source.username !== '' ||
+    source.password !== '' ||
+    source.search !== '' ||
+    source.hash !== '' ||
+    sourceUrl !== `${source.origin}${source.pathname}` ||
+    !['docs.google.com', 'forms.google.com', 'forms.gle'].includes(
+      source.hostname,
+    )
+  ) {
+    throw invalidResponse(status, 'invalid_form_reference')
+  }
+  const sourcePath = source.pathname
+  const validShort =
+    source.hostname === 'forms.gle' && /^\/[^/]+$/.test(sourcePath)
+  const sourcePrefix =
+    source.hostname === 'docs.google.com' ? '/forms' : '(?:/forms)?'
+  const sourcePublishedMatch = new RegExp(
+    `^${sourcePrefix}/d/e/[A-Za-z0-9_-]{1,512}/viewform$`,
+  ).test(sourcePath)
+  const sourceStandardMatch = new RegExp(
+    `^${sourcePrefix}/d/(?!e/)[A-Za-z0-9_-]{1,512}/(?:edit|viewform)$`,
+  ).test(sourcePath)
+  const validCanonical =
+    source.hostname !== 'forms.gle' &&
+    (sourcePublishedMatch || sourceStandardMatch)
+  if (!validShort && !validCanonical) {
+    throw invalidResponse(status, 'invalid_form_reference')
+  }
+  if (resolution === 'unresolved') {
+    if (
+      source.hostname !== 'forms.gle' ||
+      value.reason !== 'short_url_resolution_failed'
+    ) {
+      throw invalidResponse(status, 'invalid_form_reference')
     }
-    courseWorkIds.add(item.courseWorkId)
+    return {
+      resolution,
+      sourceUrl,
+      reason: 'short_url_resolution_failed',
+    }
   }
-
-  return {
-    id: readRequiredString(value.id, status),
-    name: readRequiredString(value.name, status),
-    courseWork,
+  if (resolution !== 'resolved') {
+    throw invalidResponse(status, 'invalid_form_reference')
   }
+  const formId = readRequiredString(value.formId, status)
+  const formIdType = value.formIdType
+  if (formIdType !== 'standard' && formIdType !== 'published') {
+    throw invalidResponse(status, 'invalid_form_reference')
+  }
+  const formUrl = readRequiredString(value.formUrl, status)
+  let canonicalUrl
+  try {
+    canonicalUrl = new URL(formUrl)
+  } catch {
+    throw invalidResponse(status, 'invalid_form_reference')
+  }
+  if (
+    canonicalUrl.protocol !== 'https:' ||
+    canonicalUrl.port !== '' ||
+    canonicalUrl.username !== '' ||
+    canonicalUrl.password !== '' ||
+    canonicalUrl.search !== '' ||
+    canonicalUrl.hash !== '' ||
+    canonicalUrl.hostname === 'forms.gle' ||
+    !['docs.google.com', 'forms.google.com'].includes(canonicalUrl.hostname) ||
+    formUrl !== `${canonicalUrl.origin}${canonicalUrl.pathname}`
+  ) {
+    throw invalidResponse(status, 'invalid_form_reference')
+  }
+  if (!validShort && sourceUrl !== formUrl) {
+    throw invalidResponse(status, 'invalid_form_reference')
+  }
+  const canonicalPrefix =
+    canonicalUrl.hostname === 'docs.google.com' ? '/forms' : '(?:/forms)?'
+  const publishedPathMatch = new RegExp(
+    `^${canonicalPrefix}/d/e/([A-Za-z0-9_-]{1,512})/viewform$`,
+  ).exec(canonicalUrl.pathname)
+  const standardPathMatch = new RegExp(
+    `^${canonicalPrefix}/d/([A-Za-z0-9_-]{1,512})/(?:edit|viewform)$`,
+  ).exec(canonicalUrl.pathname)
+  const formPathMatch = publishedPathMatch ?? standardPathMatch
+  const parsedFormIdType =
+    publishedPathMatch === null ? 'standard' : 'published'
+  if (
+    formPathMatch === null ||
+    formPathMatch[1] !== formId ||
+    parsedFormIdType !== formIdType
+  ) {
+    throw invalidResponse(status, 'invalid_form_reference')
+  }
+  return { resolution, sourceUrl, formId, formIdType, formUrl }
 }
 
-/**
- * Validates the ACTIVE course list before any of it reaches the database. A
- * single malformed course rejects the whole response so that a partial course
- * list can never be mistaken for the user's full set of courses.
- */
-export function parseClassroomCourseList(
+function readDistributionItem(
+  value: unknown,
+  status: number,
+): ClassroomDistributionItem {
+  if (!isRecord(value) || !Array.isArray(value.forms)) {
+    throw invalidResponse(status, 'invalid_form_reference')
+  }
+  const itemType = readDistributionItemType(value.itemType, status)
+  const item: ClassroomDistributionItem = {
+    itemId: readRequiredString(value.itemId, status),
+    itemType,
+    title: readRequiredString(value.title, status),
+    creationTime: readCreationTime(value.creationTime, status),
+    forms: value.forms.map((form) => readDistributionForm(form, status)),
+    submissionStatus: readSubmissionStatus(
+      value.submissionStatus,
+      itemType,
+      status,
+    ),
+  }
+  const description = readOptionalString(value.description, status)
+  const alternateLink = readOptionalString(value.alternateLink, status)
+  const dueDate = readDueDate(value.dueDate, status)
+  if (description !== undefined) item.description = description
+  if (alternateLink !== undefined) item.alternateLink = alternateLink
+  if (dueDate !== undefined) item.dueDate = dueDate
+  if (value.courseWorkType !== undefined) {
+    item.courseWorkType = readCourseWorkType(value.courseWorkType, status)
+  }
+  if (itemType === 'courseWork' && item.courseWorkType === undefined) {
+    throw invalidResponse(status, 'unknown_course_work_type')
+  }
+  if (itemType !== 'courseWork' && value.dueDate !== undefined) {
+    throw invalidResponse(status, 'invalid_due_date')
+  }
+  return item
+}
+
+export function parseClassroomItemsResponse(
   responseBody: unknown,
   status = 200,
-): ClassroomCourse[] {
+): ClassroomItemsCourse[] {
   if (!isRecord(responseBody) || !Array.isArray(responseBody.courses)) {
     throw invalidResponse(status, 'missing_courses')
   }
-
-  const courses = responseBody.courses.map((course) =>
-    readCourse(course, status),
-  )
+  const courses = responseBody.courses.map((value) => {
+    if (!isRecord(value) || !Array.isArray(value.items)) {
+      throw invalidResponse(status, 'invalid_course')
+    }
+    const course: ClassroomItemsCourse = {
+      id: readRequiredString(value.id, status),
+      name: readRequiredString(value.name, status),
+      items: value.items.map((item) => readDistributionItem(item, status)),
+    }
+    const itemKeys = new Set<string>()
+    for (const item of course.items) {
+      const key = `${item.itemType}:${item.itemId}`
+      if (itemKeys.has(key)) throw invalidResponse(status, 'duplicate_item')
+      itemKeys.add(key)
+    }
+    return course
+  })
   const courseIds = new Set<string>()
   for (const course of courses) {
-    if (courseIds.has(course.id)) {
+    if (courseIds.has(course.id))
       throw invalidResponse(status, 'duplicate_course')
-    }
     courseIds.add(course.id)
   }
-
   return courses
 }
 
-export async function getClassroomCourses(
+export async function getClassroomItems(
   fetchImplementation: FetchImplementation = fetch,
-): Promise<ClassroomCourse[]> {
-  const response = await fetchImplementation(
-    '/api/classroom/courses/coursework',
-    { credentials: 'same-origin' },
-  )
-
-  if (!response.ok) {
-    throw await readBackendError(response)
-  }
+): Promise<ClassroomItemsCourse[]> {
+  const response = await fetchImplementation('/api/classroom/courses/items', {
+    credentials: 'same-origin',
+  })
+  if (!response.ok) throw await readBackendError(response)
 
   let responseBody: unknown
   try {
@@ -241,6 +400,5 @@ export async function getClassroomCourses(
   } catch {
     throw invalidResponse(response.status, 'unreadable_body')
   }
-
-  return parseClassroomCourseList(responseBody, response.status)
+  return parseClassroomItemsResponse(responseBody, response.status)
 }

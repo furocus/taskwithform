@@ -8,6 +8,8 @@ import {
 import {
   createGoogleOAuthService,
   GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_ANNOUNCEMENTS_READONLY_SCOPE,
+  GOOGLE_CLASSROOM_COURSEWORK_MATERIALS_READONLY_SCOPE,
   GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
   GOOGLE_CLASSROOM_STUDENT_SUBMISSIONS_ME_READONLY_SCOPE,
   GOOGLE_GMAIL_READONLY_SCOPE,
@@ -474,7 +476,7 @@ export function createRequestHandler({
 
       if (
         request.method === 'GET' &&
-        requestUrl.pathname === '/api/classroom/courses/coursework'
+        requestUrl.pathname === '/api/classroom/courses/items'
       ) {
         const authentication = requireAuthentication(request, response)
         if (authentication === undefined) {
@@ -485,6 +487,8 @@ export function createRequestHandler({
         if (
           !hasRequiredScopes(session, [
             GOOGLE_CLASSROOM_COURSES_READONLY_SCOPE,
+            GOOGLE_CLASSROOM_COURSEWORK_MATERIALS_READONLY_SCOPE,
+            GOOGLE_CLASSROOM_ANNOUNCEMENTS_READONLY_SCOPE,
           ]) ||
           !hasAnyRequiredScope(session, [
             GOOGLE_CLASSROOM_COURSEWORK_ME_READONLY_SCOPE,
@@ -494,14 +498,14 @@ export function createRequestHandler({
           sendScopeForbidden(
             response,
             'classroom_scope_missing',
-            'Required Google Classroom scopes are missing.',
+            'Google Classroomの追加権限が必要です。再ログインして権限を許可してください。',
           )
           return
         }
 
         try {
           const courses =
-            await getClassroomService().listActiveCoursesWithCourseWork(
+            await getClassroomService().listActiveCoursesWithItems(
               session.accessToken,
             )
           sendJson(response, 200, { courses })
@@ -516,6 +520,16 @@ export function createRequestHandler({
               error: {
                 code: 'classroom_forbidden',
                 message: 'Google Classroom access was denied.',
+              },
+            })
+            return
+          }
+
+          if (error instanceof ClassroomRequestError && error.status === 429) {
+            sendJson(response, 503, {
+              error: {
+                code: 'classroom_rate_limited',
+                message: 'Google Classroom is temporarily rate limited.',
               },
             })
             return
@@ -616,15 +630,6 @@ export function createRequestHandler({
         }
         const { sessionId, session } = authentication
 
-        if (!hasRequiredScopes(session, [GOOGLE_GMAIL_READONLY_SCOPE])) {
-          sendScopeForbidden(
-            response,
-            'gmail_forbidden',
-            'Gmail access was denied.',
-          )
-          return
-        }
-
         if (!isValidGoogleFormId(gmailFormResponseId)) {
           sendJson(response, 400, {
             error: {
@@ -632,6 +637,41 @@ export function createRequestHandler({
               message: 'A valid Google Form ID is required.',
             },
           })
+          return
+        }
+
+        const formIdTypes = requestUrl.searchParams.getAll('formIdType')
+        const hasOnlyFormIdType = [...requestUrl.searchParams.keys()].every(
+          (key) => key === 'formIdType',
+        )
+        if (
+          formIdTypes.length !== 1 ||
+          !hasOnlyFormIdType ||
+          (formIdTypes[0] !== 'published' && formIdTypes[0] !== 'standard')
+        ) {
+          sendJson(response, 400, {
+            error: {
+              code: 'invalid_form_id_type',
+              message: 'formIdType must be published or standard.',
+            },
+          })
+          return
+        }
+
+        if (formIdTypes[0] === 'standard') {
+          sendJson(response, 200, {
+            status: 'unreviewable',
+            reason: 'standard_id_not_matchable',
+          })
+          return
+        }
+
+        if (!hasRequiredScopes(session, [GOOGLE_GMAIL_READONLY_SCOPE])) {
+          sendScopeForbidden(
+            response,
+            'gmail_forbidden',
+            'Gmail access was denied.',
+          )
           return
         }
 

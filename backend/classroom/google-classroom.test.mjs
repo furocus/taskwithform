@@ -3,8 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   ClassroomRequestError,
   createGoogleClassroomService,
-  extractGoogleFormId,
-  extractGoogleFormIdDetails,
 } from './google-classroom.mjs'
 
 function createJsonResponse(body, status = 200) {
@@ -15,64 +13,52 @@ function createJsonResponse(body, status = 200) {
   }
 }
 
+function createRedirectResponse(location, status = 302) {
+  return {
+    ok: false,
+    status,
+    headers: new Headers({ location }),
+    json: vi.fn(async () => ({})),
+  }
+}
+
+function createItemsFetch({
+  courseWork = [],
+  courseWorkMaterial = [],
+  announcements = [],
+  studentSubmissions = [],
+  onShortUrl,
+} = {}) {
+  return vi.fn(async (requestUrl, requestOptions) => {
+    if (requestUrl.hostname === 'forms.gle') {
+      if (onShortUrl === undefined) {
+        throw new Error('short URL resolution failed')
+      }
+      return onShortUrl(requestUrl, requestOptions)
+    }
+    if (requestUrl.pathname === '/v1/courses') {
+      return createJsonResponse({
+        courses: [{ id: 'course-1', name: '数学' }],
+      })
+    }
+    if (requestUrl.pathname.endsWith('/studentSubmissions')) {
+      return createJsonResponse({ studentSubmissions })
+    }
+    if (requestUrl.pathname.endsWith('/courseWork')) {
+      return createJsonResponse({ courseWork })
+    }
+    if (requestUrl.pathname.endsWith('/courseWorkMaterials')) {
+      return createJsonResponse({ courseWorkMaterial })
+    }
+    if (requestUrl.pathname.endsWith('/announcements')) {
+      return createJsonResponse({ announcements })
+    }
+    throw new Error(`unexpected request: ${requestUrl}`)
+  })
+}
+
 describe('Google Classroom service', () => {
-  it.each([
-    ['https://docs.google.com/forms/d/form-id/edit', 'form-id'],
-    [
-      'https://docs.google.com/forms/d/e/published-form-id/viewform?usp=sharing',
-      'published-form-id',
-    ],
-  ])('extracts a Form ID from %s', (formUrl, expectedFormId) => {
-    expect(extractGoogleFormId(formUrl)).toBe(expectedFormId)
-  })
-
-  it('returns the URL identifier and whether a Form URL is standard or published', () => {
-    expect(
-      extractGoogleFormIdDetails(
-        'https://docs.google.com/forms/d/form-id/viewform',
-      ),
-    ).toEqual({ formId: 'form-id', formIdType: 'standard' })
-    expect(
-      extractGoogleFormIdDetails(
-        'https://docs.google.com/forms/d/e/published-form-id/viewform',
-      ),
-    ).toEqual({ formId: 'published-form-id', formIdType: 'published' })
-  })
-
-  it.each([
-    'http://docs.google.com/forms/d/form-id/edit',
-    'https://docs.google.com/forms/d/e/viewform',
-    'https://docs.google.com/forms/d/edit',
-    'https://docs.google.com/forms/d/e/viewform',
-    'https://docs.google.com/forms/d/form-id/unknown-action',
-    'https://docs.google.com/forms/d/e/published-form-id/edit',
-    'https://docs.google.com/forms/d/form-id/edit/extra-segment',
-  ])('rejects an unrecognized Form URL shape: %s', (formUrl) => {
-    expect(() => extractGoogleFormId(formUrl)).toThrowError(
-      expect.objectContaining({
-        name: 'ClassroomRequestError',
-        code: 'invalid_response',
-      }),
-    )
-  })
-
-  it.each([
-    'https://docs.google.com/forms/d/form%20id/viewform',
-    'https://docs.google.com/forms/d/form.id/viewform',
-    `https://docs.google.com/forms/d/${'a'.repeat(513)}/viewform`,
-  ])(
-    'rejects a Form ID outside the shared opaque ID contract: %s',
-    (formUrl) => {
-      expect(() => extractGoogleFormId(formUrl)).toThrowError(
-        expect.objectContaining({
-          name: 'ClassroomRequestError',
-          code: 'invalid_response',
-        }),
-      )
-    },
-  )
-
-  it('counts active courses across every response page', async () => {
+  it('counts ACTIVE courses across pages without exposing the token', async () => {
     const fetchImplementation = vi
       .fn()
       .mockResolvedValueOnce(
@@ -82,98 +68,124 @@ describe('Google Classroom service', () => {
         }),
       )
       .mockResolvedValueOnce(
-        createJsonResponse({
-          courses: [{ id: 'course-3' }],
-        }),
+        createJsonResponse({ courses: [{ id: 'course-3' }] }),
       )
-    const service = createGoogleClassroomService({
-      fetchImplementation,
-    })
+    const service = createGoogleClassroomService({ fetchImplementation })
 
-    await expect(service.countActiveCourses('access-token')).resolves.toBe(3)
-
+    await expect(service.countActiveCourses('secret-token')).resolves.toBe(3)
     expect(fetchImplementation).toHaveBeenCalledTimes(2)
-    for (const [requestUrl, requestOptions] of fetchImplementation.mock.calls) {
-      expect(requestUrl.searchParams.get('courseStates')).toBe('ACTIVE')
-      expect(requestUrl.searchParams.get('fields')).toBe(
-        'nextPageToken,courses(id)',
-      )
-      expect(requestOptions.headers.Authorization).toBe('Bearer access-token')
-    }
     expect(
       fetchImplementation.mock.calls[1][0].searchParams.get('pageToken'),
     ).toBe('next-page')
   })
 
-  it('returns zero when Google omits the courses field', async () => {
-    const service = createGoogleClassroomService({
-      fetchImplementation: vi.fn(async () => createJsonResponse({})),
+  it('returns all distribution sources with course-work submission states', async () => {
+    const fetchImplementation = createItemsFetch({
+      courseWork: [
+        {
+          id: 'work-standard',
+          title: '標準ID課題',
+          description: 'https://docs.google.com/forms/d/standard-id/viewform',
+          workType: 'ASSIGNMENT',
+          dueDate: { year: 2026, month: 9, day: 6 },
+          creationTime: '2026-09-01T00:00:00Z',
+          state: 'PUBLISHED',
+        },
+        {
+          id: 'work-published',
+          title: '公開ID課題',
+          workType: 'ASSIGNMENT',
+          creationTime: '2026-09-02T00:00:00Z',
+          materials: [
+            {
+              form: {
+                formUrl:
+                  'https://docs.google.com/forms/d/e/published-id/viewform',
+                title: 'レスポンスに出してはいけないFormタイトル',
+              },
+            },
+          ],
+        },
+        {
+          id: 'draft',
+          title: '下書き',
+          workType: 'ASSIGNMENT',
+          creationTime: '2026-09-03T00:00:00Z',
+          state: 'DRAFT',
+        },
+      ],
+      courseWorkMaterial: [
+        {
+          id: 'material-1',
+          title: '資料',
+          creationTime: '2026-09-03T00:00:00Z',
+          materials: [{ link: { url: 'https://forms.gle/short' } }],
+        },
+        {
+          id: 'material-without-form',
+          title: '通常資料',
+          creationTime: '2026-09-03T00:00:00Z',
+          materials: [{ link: { url: 'https://example.com/' } }],
+        },
+      ],
+      announcements: [
+        {
+          id: 'announcement-1',
+          text: '連絡 https://forms.google.com/d/announcement-id/viewform',
+          creationTime: '2026-09-04T00:00:00Z',
+        },
+      ],
+      studentSubmissions: [
+        { courseWorkId: 'work-standard', state: 'NEW' },
+        { courseWorkId: 'work-published', state: 'TURNED_IN' },
+        { courseWorkId: 'draft', state: 'NEW' },
+      ],
+      onShortUrl: () =>
+        createRedirectResponse(
+          'https://docs.google.com/forms/d/e/material-id/viewform?usp=sharing',
+        ),
     })
-
-    await expect(service.countActiveCourses('access-token')).resolves.toBe(0)
-  })
-
-  it('lists published course work and extracts attached Form IDs across pages', async () => {
-    const fetchImplementation = vi
-      .fn()
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          courses: [{ id: 'course/1', name: '数学' }],
-        }),
-      )
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          courseWork: [
-            {
-              id: 'work-1',
-              title: '確認テスト',
-              description: 'Google Formに回答してください。',
-              alternateLink: 'https://classroom.google.com/example',
-              dueDate: { year: 2026, month: 8, day: 9 },
-              workType: 'ASSIGNMENT',
-              materials: [
-                {
-                  form: {
-                    formUrl:
-                      'https://docs.google.com/forms/d/e/published-id/viewform',
-                  },
-                },
-                {},
-              ],
-            },
-          ],
-          nextPageToken: 'course-work-page-2',
-        }),
-      )
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          courseWork: [
-            {
-              id: 'work-2',
-              title: '資料確認',
-              workType: 'ASSIGNMENT',
-            },
-          ],
-        }),
-      )
     const service = createGoogleClassroomService({ fetchImplementation })
 
-    await expect(
-      service.listActiveCoursesWithCourseWork('access-token'),
-    ).resolves.toEqual([
+    const result = await service.listActiveCoursesWithItems('access-token')
+
+    expect(result).toEqual([
       {
-        id: 'course/1',
+        id: 'course-1',
         name: '数学',
-        courseWork: [
+        items: [
           {
-            courseWorkId: 'work-1',
+            itemId: 'work-standard',
+            itemType: 'courseWork',
+            title: '標準ID課題',
+            description: 'https://docs.google.com/forms/d/standard-id/viewform',
+            dueDate: '2026-09-06',
             courseWorkType: 'ASSIGNMENT',
-            title: '確認テスト',
-            description: 'Google Formに回答してください。',
-            alternateLink: 'https://classroom.google.com/example',
-            dueDate: '2026-08-09',
+            creationTime: '2026-09-01T00:00:00Z',
+            submissionStatus: 'unsubmitted',
             forms: [
               {
+                resolution: 'resolved',
+                sourceUrl:
+                  'https://docs.google.com/forms/d/standard-id/viewform',
+                formId: 'standard-id',
+                formIdType: 'standard',
+                formUrl: 'https://docs.google.com/forms/d/standard-id/viewform',
+              },
+            ],
+          },
+          {
+            itemId: 'work-published',
+            itemType: 'courseWork',
+            title: '公開ID課題',
+            courseWorkType: 'ASSIGNMENT',
+            creationTime: '2026-09-02T00:00:00Z',
+            submissionStatus: 'submitted',
+            forms: [
+              {
+                resolution: 'resolved',
+                sourceUrl:
+                  'https://docs.google.com/forms/d/e/published-id/viewform',
                 formId: 'published-id',
                 formIdType: 'published',
                 formUrl:
@@ -182,240 +194,392 @@ describe('Google Classroom service', () => {
             ],
           },
           {
-            courseWorkId: 'work-2',
-            courseWorkType: 'ASSIGNMENT',
-            title: '資料確認',
-            forms: [],
+            itemId: 'material-1',
+            itemType: 'courseWorkMaterial',
+            title: '資料',
+            creationTime: '2026-09-03T00:00:00Z',
+            submissionStatus: 'untracked',
+            forms: [
+              {
+                resolution: 'resolved',
+                sourceUrl: 'https://forms.gle/short',
+                formId: 'material-id',
+                formIdType: 'published',
+                formUrl:
+                  'https://docs.google.com/forms/d/e/material-id/viewform',
+              },
+            ],
+          },
+          {
+            itemId: 'announcement-1',
+            itemType: 'announcement',
+            title: '連絡 https://forms.google.com/d/announcement-id/viewform',
+            description:
+              '連絡 https://forms.google.com/d/announcement-id/viewform',
+            creationTime: '2026-09-04T00:00:00Z',
+            submissionStatus: 'untracked',
+            forms: [
+              {
+                resolution: 'resolved',
+                sourceUrl:
+                  'https://forms.google.com/d/announcement-id/viewform',
+                formId: 'announcement-id',
+                formIdType: 'standard',
+                formUrl: 'https://forms.google.com/d/announcement-id/viewform',
+              },
+            ],
           },
         ],
       },
     ])
+    expect(JSON.stringify(result)).not.toContain('Formタイトル')
 
-    expect(fetchImplementation).toHaveBeenCalledTimes(3)
-    const courseRequestUrl = fetchImplementation.mock.calls[0][0]
-    expect(courseRequestUrl.searchParams.get('courseStates')).toBe('ACTIVE')
-    expect(courseRequestUrl.searchParams.get('studentId')).toBe('me')
-    expect(courseRequestUrl.searchParams.get('fields')).toBe(
-      'nextPageToken,courses(id,name)',
+    const shortCall = fetchImplementation.mock.calls.find(
+      ([requestUrl]) => requestUrl.hostname === 'forms.gle',
     )
-
-    const firstCourseWorkUrl = fetchImplementation.mock.calls[1][0]
-    expect(firstCourseWorkUrl.pathname).toBe(
-      '/v1/courses/course%2F1/courseWork',
+    expect(shortCall?.[1]).toEqual(
+      expect.objectContaining({
+        credentials: 'omit',
+        redirect: 'manual',
+        referrerPolicy: 'no-referrer',
+        signal: expect.any(AbortSignal),
+      }),
     )
-    expect(firstCourseWorkUrl.searchParams.get('courseWorkStates')).toBe(
-      'PUBLISHED',
-    )
-    expect(firstCourseWorkUrl.searchParams.get('fields')).not.toContain(
-      'responseUrl',
-    )
-    expect(
-      fetchImplementation.mock.calls[2][0].searchParams.get('pageToken'),
-    ).toBe('course-work-page-2')
+    expect(shortCall?.[1]).not.toHaveProperty('headers')
   })
 
-  it('requests only courses where the current user is a student', async () => {
-    const fetchImplementation = vi.fn(async (requestUrl) => {
-      if (requestUrl.pathname === '/v1/courses') {
-        if (requestUrl.searchParams.get('studentId') === 'me') {
-          return createJsonResponse({
-            courses: [{ id: 'student-course', name: '数学' }],
-          })
-        }
-
-        return createJsonResponse({
-          courses: [
-            { id: 'teacher-course', name: '担当授業' },
-            { id: 'student-course', name: '数学' },
-          ],
-        })
-      }
-
-      if (requestUrl.pathname.includes('teacher-course')) {
-        return createJsonResponse({}, 403)
-      }
-
-      return createJsonResponse({
+  it.each([
+    ['network failure', () => Promise.reject(new Error('network'))],
+    [
+      'redirect to a non-allowlisted host',
+      () => createRedirectResponse('https://evil.example/forms/d/id/viewform'),
+    ],
+    [
+      'redirect containing URL credentials',
+      () =>
+        createRedirectResponse(
+          'https://user:password@forms.gle/another-short-link',
+        ),
+    ],
+  ])(
+    'returns unresolved for a short URL %s',
+    async (_description, onShortUrl) => {
+      const fetchImplementation = createItemsFetch({
         courseWork: [
           {
             id: 'work-1',
-            title: '確認テスト',
+            title: '課題',
             workType: 'ASSIGNMENT',
+            creationTime: '2026-09-01T00:00:00Z',
+            materials: [{ form: { formUrl: 'https://forms.gle/unsafe' } }],
           },
         ],
+        studentSubmissions: [{ courseWorkId: 'work-1', state: 'NEW' }],
+        onShortUrl,
       })
-    })
-    const service = createGoogleClassroomService({ fetchImplementation })
 
-    await expect(
-      service.listActiveCoursesWithCourseWork('access-token'),
-    ).resolves.toEqual([
-      {
-        id: 'student-course',
-        name: '数学',
-        courseWork: [
-          {
-            courseWorkId: 'work-1',
-            courseWorkType: 'ASSIGNMENT',
-            title: '確認テスト',
-            forms: [],
-          },
-        ],
-      },
-    ])
-    expect(fetchImplementation).toHaveBeenCalledTimes(2)
-    expect(
-      fetchImplementation.mock.calls.some(([requestUrl]) =>
-        requestUrl.pathname.includes('teacher-course'),
-      ),
-    ).toBe(false)
-  })
-
-  it('keeps an active course that has no published course work', async () => {
-    const fetchImplementation = vi
-      .fn()
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          courses: [
-            { id: 'course-1', name: '数学' },
-            { id: 'course-2', name: '英語' },
-          ],
-        }),
-      )
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          courseWork: [
+      await expect(
+        createGoogleClassroomService({
+          fetchImplementation,
+        }).listActiveCoursesWithItems('access-token'),
+      ).resolves.toMatchObject([
+        {
+          items: [
             {
-              id: 'work-1',
-              title: '確認テスト',
-              workType: 'ASSIGNMENT',
-            },
-          ],
-        }),
-      )
-      .mockResolvedValueOnce(createJsonResponse({}))
-    const service = createGoogleClassroomService({ fetchImplementation })
-
-    await expect(
-      service.listActiveCoursesWithCourseWork('access-token'),
-    ).resolves.toEqual([
-      {
-        id: 'course-1',
-        name: '数学',
-        courseWork: [
-          {
-            courseWorkId: 'work-1',
-            courseWorkType: 'ASSIGNMENT',
-            title: '確認テスト',
-            forms: [],
-          },
-        ],
-      },
-      {
-        id: 'course-2',
-        name: '英語',
-        courseWork: [],
-      },
-    ])
-  })
-
-  it('rejects an unrecognized Form URL instead of returning an incorrect ID', async () => {
-    const fetchImplementation = vi
-      .fn()
-      .mockResolvedValueOnce(
-        createJsonResponse({ courses: [{ id: 'course-1', name: '数学' }] }),
-      )
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          courseWork: [
-            {
-              id: 'work-1',
-              title: '確認テスト',
-              workType: 'ASSIGNMENT',
-              materials: [
-                { form: { formUrl: 'https://forms.example/form-id' } },
+              forms: [
+                {
+                  resolution: 'unresolved',
+                  sourceUrl: 'https://forms.gle/unsafe',
+                  reason: 'short_url_resolution_failed',
+                },
               ],
             },
           ],
-        }),
-      )
+        },
+      ])
+    },
+  )
+
+  it('returns unresolved when a short URL exceeds the redirect hop limit', async () => {
+    const onShortUrl = vi.fn((requestUrl) =>
+      createRedirectResponse(
+        `https://forms.gle/hop-${new URL(requestUrl).pathname.length}`,
+      ),
+    )
+    const fetchImplementation = createItemsFetch({
+      courseWork: [
+        {
+          id: 'work-1',
+          title: '課題',
+          workType: 'ASSIGNMENT',
+          creationTime: '2026-09-01T00:00:00Z',
+          materials: [{ form: { formUrl: 'https://forms.gle/a' } }],
+        },
+      ],
+      studentSubmissions: [{ courseWorkId: 'work-1', state: 'NEW' }],
+      onShortUrl,
+    })
+
+    await expect(
+      createGoogleClassroomService({
+        fetchImplementation,
+      }).listActiveCoursesWithItems('access-token'),
+    ).resolves.toMatchObject([
+      {
+        items: [
+          {
+            forms: [
+              {
+                resolution: 'unresolved',
+                sourceUrl: 'https://forms.gle/a',
+                reason: 'short_url_resolution_failed',
+              },
+            ],
+          },
+        ],
+      },
+    ])
+    // The initial request plus FORM_REDIRECT_MAX_HOPS follow-ups, and then it
+    // gives up instead of following redirects forever.
+    expect(onShortUrl).toHaveBeenCalledTimes(4)
+  })
+
+  it('caches one short URL only for the current items request', async () => {
+    const onShortUrl = vi.fn(() =>
+      createRedirectResponse(
+        'https://docs.google.com/forms/d/e/published-id/viewform',
+      ),
+    )
+    const repeatedForm = { form: { formUrl: 'https://forms.gle/repeated' } }
+    const fetchImplementation = createItemsFetch({
+      courseWork: [
+        {
+          id: 'work-1',
+          title: '課題',
+          workType: 'ASSIGNMENT',
+          creationTime: '2026-09-01T00:00:00Z',
+          materials: [repeatedForm, repeatedForm],
+        },
+      ],
+      studentSubmissions: [{ courseWorkId: 'work-1', state: 'NEW' }],
+      onShortUrl,
+    })
     const service = createGoogleClassroomService({ fetchImplementation })
 
-    await expect(
-      service.listActiveCoursesWithCourseWork('access-token'),
-    ).rejects.toMatchObject({ code: 'invalid_response' })
+    await service.listActiveCoursesWithItems('access-token')
+    expect(onShortUrl).toHaveBeenCalledTimes(1)
+    await service.listActiveCoursesWithItems('access-token')
+    expect(onShortUrl).toHaveBeenCalledTimes(2)
   })
 
-  it('preserves an upstream HTTP status without reading its body', async () => {
-    const response = createJsonResponse({ sensitiveDetails: 'not-read' }, 403)
+  it.each([
+    ['TURNED_IN', 'submitted'],
+    ['RETURNED', 'submitted'],
+    ['NEW', 'unsubmitted'],
+    ['CREATED', 'unsubmitted'],
+    ['RECLAIMED_BY_STUDENT', 'unsubmitted'],
+  ])('maps submission state %s to %s', async (state, submissionStatus) => {
     const service = createGoogleClassroomService({
-      fetchImplementation: vi.fn(async () => response),
-    })
-
-    await expect(
-      service.countActiveCourses('access-token'),
-    ).rejects.toMatchObject({
-      name: 'ClassroomRequestError',
-      code: 'upstream_error',
-      status: 403,
-    })
-    expect(response.json).not.toHaveBeenCalled()
-  })
-
-  it('wraps network failures without exposing their message', async () => {
-    const service = createGoogleClassroomService({
-      fetchImplementation: vi.fn(async () => {
-        throw new Error('sensitive network details')
+      fetchImplementation: createItemsFetch({
+        courseWork: [
+          {
+            id: 'work-1',
+            title: '課題',
+            workType: 'ASSIGNMENT',
+            creationTime: '2026-09-01T00:00:00Z',
+          },
+        ],
+        studentSubmissions: [{ courseWorkId: 'work-1', state }],
       }),
     })
 
-    await expect(service.countActiveCourses('access-token')).rejects.toEqual(
-      expect.objectContaining({
-        name: 'ClassroomRequestError',
-        code: 'network_error',
-        message: 'Google Classroom request failed.',
+    await expect(
+      service.listActiveCoursesWithItems('access-token'),
+    ).resolves.toMatchObject([
+      { items: [{ itemId: 'work-1', submissionStatus }] },
+    ])
+  })
+
+  it('treats a zero grade as submitted', async () => {
+    // `if (assignedGrade)` would drop a 0 point grade back to unsubmitted.
+    const service = createGoogleClassroomService({
+      fetchImplementation: createItemsFetch({
+        courseWork: [
+          {
+            id: 'work-1',
+            title: '課題',
+            workType: 'ASSIGNMENT',
+            creationTime: '2026-09-01T00:00:00Z',
+          },
+        ],
+        studentSubmissions: [
+          { courseWorkId: 'work-1', state: 'NEW', assignedGrade: 0 },
+        ],
       }),
+    })
+
+    await expect(
+      service.listActiveCoursesWithItems('access-token'),
+    ).resolves.toMatchObject([
+      { items: [{ itemId: 'work-1', submissionStatus: 'submitted' }] },
+    ])
+  })
+
+  it('pages student submissions and ignores records for removed course work', async () => {
+    const courseWork = [
+      {
+        id: 'work-1',
+        title: '課題1',
+        workType: 'ASSIGNMENT',
+        creationTime: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'work-2',
+        title: '課題2',
+        workType: 'ASSIGNMENT',
+        creationTime: '2026-09-02T00:00:00Z',
+      },
+    ]
+    const submissionPages = [
+      {
+        studentSubmissions: [{ courseWorkId: 'work-1', state: 'TURNED_IN' }],
+        nextPageToken: 'submission-page-2',
+      },
+      {
+        studentSubmissions: [
+          { courseWorkId: 'work-2', state: 'NEW' },
+          // Course work deleted from Classroom keeps its submission history.
+          { courseWorkId: 'work-deleted', state: 'TURNED_IN' },
+        ],
+      },
+    ]
+    const submissionRequestUrls = []
+    const fetchImplementation = vi.fn(async (requestUrl) => {
+      if (requestUrl.pathname === '/v1/courses') {
+        return createJsonResponse({
+          courses: [{ id: 'course-1', name: '数学' }],
+        })
+      }
+      if (requestUrl.pathname.endsWith('/studentSubmissions')) {
+        submissionRequestUrls.push(requestUrl)
+        return createJsonResponse(
+          submissionPages[submissionRequestUrls.length - 1],
+        )
+      }
+      if (requestUrl.pathname.endsWith('/courseWork')) {
+        return createJsonResponse({ courseWork })
+      }
+      return createJsonResponse({})
+    })
+
+    await expect(
+      createGoogleClassroomService({
+        fetchImplementation,
+      }).listActiveCoursesWithItems('access-token'),
+    ).resolves.toMatchObject([
+      {
+        items: [
+          { itemId: 'work-1', submissionStatus: 'submitted' },
+          { itemId: 'work-2', submissionStatus: 'unsubmitted' },
+        ],
+      },
+    ])
+
+    expect(submissionRequestUrls).toHaveLength(2)
+    const [firstRequestUrl, secondRequestUrl] = submissionRequestUrls
+    expect(firstRequestUrl.pathname).toBe(
+      '/v1/courses/course-1/courseWork/-/studentSubmissions',
+    )
+    expect(firstRequestUrl.searchParams.get('userId')).toBe('me')
+    expect(firstRequestUrl.searchParams.get('pageSize')).toBe('100')
+    // Omitting nextPageToken from `fields` silently truncates page 2.
+    expect(firstRequestUrl.searchParams.get('fields')).toBe(
+      'nextPageToken,studentSubmissions(courseWorkId,state,assignedGrade)',
+    )
+    expect(firstRequestUrl.searchParams.get('pageToken')).toBeNull()
+    expect(secondRequestUrl.searchParams.get('pageToken')).toBe(
+      'submission-page-2',
     )
   })
 
-  it('aborts a stalled request and maps it to a network failure', async () => {
-    const fetchImplementation = vi.fn(
-      (_requestUrl, { signal }) =>
-        new Promise((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(signal.reason), {
-            once: true,
-          })
+  it('marks course work without a submission record as untracked', async () => {
+    // Course work assigned to selected students only has no submission record
+    // for this user, so the course must still synchronize.
+    const service = createGoogleClassroomService({
+      fetchImplementation: createItemsFetch({
+        courseWork: [
+          {
+            id: 'work-1',
+            title: '他の生徒に割り当てられた課題',
+            workType: 'ASSIGNMENT',
+            creationTime: '2026-09-01T00:00:00Z',
+          },
+        ],
+        studentSubmissions: [],
+      }),
+    })
+
+    await expect(
+      service.listActiveCoursesWithItems('access-token'),
+    ).resolves.toMatchObject([
+      { items: [{ itemId: 'work-1', submissionStatus: 'untracked' }] },
+    ])
+  })
+
+  it('rejects duplicate and invalid student submissions', async () => {
+    const courseWork = [
+      {
+        id: 'work-1',
+        title: '課題',
+        workType: 'ASSIGNMENT',
+        creationTime: '2026-09-01T00:00:00Z',
+      },
+    ]
+
+    for (const studentSubmissions of [
+      [
+        { courseWorkId: 'work-1', state: 'NEW' },
+        { courseWorkId: 'work-1', state: 'TURNED_IN' },
+      ],
+      [{ courseWorkId: 'work-1', state: 'UNKNOWN' }],
+      [{ courseWorkId: 'work-1', state: 'NEW', assignedGrade: -1 }],
+      [{ courseWorkId: '', state: 'NEW' }],
+      [null],
+    ]) {
+      await expect(
+        createGoogleClassroomService({
+          fetchImplementation: createItemsFetch({
+            courseWork,
+            studentSubmissions,
+          }),
+        }).listActiveCoursesWithItems('access-token'),
+      ).rejects.toMatchObject({ code: 'invalid_response' })
+    }
+  })
+
+  it.each([401, 403, 429])(
+    'preserves upstream status %s without reading its body',
+    async (status) => {
+      const response = createJsonResponse(
+        { sensitiveDetails: 'not-read' },
+        status,
+      )
+      const service = createGoogleClassroomService({
+        fetchImplementation: vi.fn(async () => response),
+      })
+
+      await expect(
+        service.listActiveCoursesWithItems('access-token'),
+      ).rejects.toEqual(
+        expect.objectContaining({
+          name: 'ClassroomRequestError',
+          code: 'upstream_error',
+          status,
         }),
-    )
-    const service = createGoogleClassroomService({
-      fetchImplementation,
-      requestTimeoutMs: 1,
-    })
-
-    await expect(service.countActiveCourses('access-token')).rejects.toEqual(
-      expect.objectContaining({
-        name: 'ClassroomRequestError',
-        code: 'network_error',
-        message: 'Google Classroom request failed.',
-      }),
-    )
-    expect(fetchImplementation.mock.calls[0][1].signal.aborted).toBe(true)
-  })
-
-  it('rejects an unexpected response shape', async () => {
-    const service = createGoogleClassroomService({
-      fetchImplementation: vi.fn(async () =>
-        createJsonResponse({ courses: { id: 'not-an-array' } }),
-      ),
-    })
-
-    await expect(
-      service.countActiveCourses('access-token'),
-    ).rejects.toMatchObject({
-      name: 'ClassroomRequestError',
-      code: 'invalid_response',
-    })
-  })
+      )
+      expect(response.json).not.toHaveBeenCalled()
+    },
+  )
 
   it('rejects a repeated page token instead of looping forever', async () => {
     const fetchImplementation = vi
@@ -426,9 +590,7 @@ describe('Google Classroom service', () => {
       .mockResolvedValueOnce(
         createJsonResponse({ nextPageToken: 'repeated-page' }),
       )
-    const service = createGoogleClassroomService({
-      fetchImplementation,
-    })
+    const service = createGoogleClassroomService({ fetchImplementation })
 
     await expect(
       service.countActiveCourses('access-token'),

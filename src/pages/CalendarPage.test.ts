@@ -13,7 +13,9 @@ const tasksByDate = ref<
       source: 'google-classroom'
       courseId: string
       courseName: string
-      courseWorkId: string
+      itemType: 'courseWork'
+      itemId: string
+      creationTime: '2026-08-01T00:00:00.000Z'
       courseWorkType: 'ASSIGNMENT'
       subjectName: string
       title: string
@@ -30,7 +32,9 @@ const tasksByDate = ref<
       source: 'google-classroom',
       courseId: 'course-c',
       courseName: 'C言語',
-      courseWorkId: 'work-1',
+      itemType: 'courseWork',
+      itemId: 'work-1',
+      creationTime: '2026-08-01T00:00:00.000Z',
       courseWorkType: 'ASSIGNMENT',
       title: 'C言語課題1',
       subjectName: 'C',
@@ -44,7 +48,9 @@ const tasksByDate = ref<
       source: 'google-classroom',
       courseId: 'course-algo',
       courseName: 'アルゴリズム',
-      courseWorkId: 'work-2',
+      itemType: 'courseWork',
+      itemId: 'work-2',
+      creationTime: '2026-08-01T00:00:00.000Z',
       courseWorkType: 'ASSIGNMENT',
       title: 'アルゴリズム問題集',
       subjectName: 'アルゴリズム',
@@ -60,7 +66,9 @@ const tasksByDate = ref<
       source: 'google-classroom',
       courseId: 'course-ict',
       courseName: 'ICT概論',
-      courseWorkId: 'work-3',
+      itemType: 'courseWork',
+      itemId: 'work-3',
+      creationTime: '2026-08-01T00:00:00.000Z',
       courseWorkType: 'ASSIGNMENT',
       title: 'デジタル社会と日本の未来',
       subjectName: 'ICT',
@@ -86,7 +94,9 @@ afterEach(() => {
         source: 'google-classroom',
         courseId: 'course-c',
         courseName: 'C言語',
-        courseWorkId: 'work-1',
+        itemType: 'courseWork',
+        itemId: 'work-1',
+        creationTime: '2026-08-01T00:00:00.000Z',
         courseWorkType: 'ASSIGNMENT',
         title: 'C言語課題1',
         subjectName: 'C',
@@ -100,7 +110,9 @@ afterEach(() => {
         source: 'google-classroom',
         courseId: 'course-algo',
         courseName: 'アルゴリズム',
-        courseWorkId: 'work-2',
+        itemType: 'courseWork',
+        itemId: 'work-2',
+        creationTime: '2026-08-01T00:00:00.000Z',
         courseWorkType: 'ASSIGNMENT',
         title: 'アルゴリズム問題集',
         subjectName: 'アルゴリズム',
@@ -116,7 +128,9 @@ afterEach(() => {
         source: 'google-classroom',
         courseId: 'course-ict',
         courseName: 'ICT概論',
-        courseWorkId: 'work-3',
+        itemType: 'courseWork',
+        itemId: 'work-3',
+        creationTime: '2026-08-01T00:00:00.000Z',
         courseWorkType: 'ASSIGNMENT',
         title: 'デジタル社会と日本の未来',
         subjectName: 'ICT',

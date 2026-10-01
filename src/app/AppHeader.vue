@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import NotificationPopover from '../features/notifications/components/NotificationPopover.vue'
+import { useDeadlineNotifications } from '../features/notifications/useDeadlineNotifications'
 
 const router = useRouter()
 const route = useRoute()
 const today = new Date()
-const currentYear = today.getFullYear()
-const currentMonth = today.getMonth() + 1
 const formattedDate = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`
+
+const notification = useDeadlineNotifications({ now: () => new Date() })
+const notificationStatus = notification.status
+const notificationTasks = notification.notifications
+const notificationBadgeLabel = notification.badgeLabel
+const notificationDate = notification.date
+const isNotificationOpen = ref(false)
+const notificationArea = ref<HTMLElement | null>(null)
+const notificationButton = ref<HTMLButtonElement | null>(null)
 
 const isCalendarPage = computed(() => route.name === 'calendar')
 const pageTitle = computed(() =>
@@ -21,6 +30,55 @@ const goToCalendar = () => {
 const goToMain = () => {
   router.push('/')
 }
+
+const closeNotifications = (returnFocus = false) => {
+  isNotificationOpen.value = false
+  if (returnFocus) notificationButton.value?.focus()
+}
+
+const toggleNotifications = () => {
+  isNotificationOpen.value = !isNotificationOpen.value
+}
+
+const handleDocumentPointerDown = (event: PointerEvent) => {
+  if (
+    isNotificationOpen.value &&
+    notificationArea.value &&
+    !notificationArea.value.contains(event.target as Node)
+  ) {
+    closeNotifications()
+  }
+}
+
+const handleDocumentKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && isNotificationOpen.value) {
+    event.preventDefault()
+    closeNotifications(true)
+  }
+}
+
+watch(isNotificationOpen, async (open) => {
+  if (!open) return
+  await nextTick()
+  if (!isNotificationOpen.value) return
+
+  const popover = document.getElementById('notification-popover')
+  const firstFocusable = popover?.querySelector<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  )
+  const focusTarget = firstFocusable ?? popover
+  focusTarget?.focus()
+})
+
+onMounted(() => {
+  document.addEventListener('pointerdown', handleDocumentPointerDown)
+  document.addEventListener('keydown', handleDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown)
+  document.removeEventListener('keydown', handleDocumentKeydown)
+})
 </script>
 
 <template>
@@ -43,11 +101,19 @@ const goToMain = () => {
         </h1>
       </div>
 
-      <div class="flex shrink-0 items-center gap-2">
+      <div
+        ref="notificationArea"
+        class="relative flex shrink-0 items-center gap-2"
+      >
         <button
+          ref="notificationButton"
           class="icon-button icon-button--bell relative"
           type="button"
           aria-label="通知"
+          aria-haspopup="dialog"
+          aria-controls="notification-popover"
+          :aria-expanded="isNotificationOpen"
+          @click="toggleNotifications"
         >
           <svg
             class="h-5 w-5"
@@ -62,11 +128,22 @@ const goToMain = () => {
             <path d="M10 17a2 2 0 0 0 4 0" />
           </svg>
           <span
+            v-if="notificationBadgeLabel"
+            data-test="notification-badge"
             class="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold text-white"
             style="background-color: var(--color-badge-count)"
-            >3</span
+            >{{ notificationBadgeLabel }}</span
           >
         </button>
+
+        <NotificationPopover
+          v-if="isNotificationOpen"
+          :status="notificationStatus"
+          :notifications="notificationTasks"
+          :date="notificationDate"
+          :reload="notification.reload"
+          @close="closeNotifications"
+        />
 
         <button
           class="icon-button icon-button--home"

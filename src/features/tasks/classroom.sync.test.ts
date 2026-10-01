@@ -59,7 +59,7 @@ describe('syncClassroomCourses', () => {
     ])
 
     const tasks = await repository.getAllTasks()
-    expect(tasks.map((task) => task.courseWorkId).sort()).toEqual([
+    expect(tasks.map((task) => task.itemId).sort()).toEqual([
       'work-no-due-date',
       'work-quiz',
       'work-two-forms',
@@ -74,9 +74,7 @@ describe('syncClassroomCourses', () => {
     })
     const tasks = await repository.getAllTasks()
 
-    expect(
-      tasks.find((task) => task.courseWorkId === 'work-quiz'),
-    ).toMatchObject({
+    expect(tasks.find((task) => task.itemId === 'work-quiz')).toMatchObject({
       source: 'google-classroom',
       courseId: 'course-math',
       courseName: '数学I',
@@ -86,9 +84,103 @@ describe('syncClassroomCourses', () => {
       description: 'Google Formに回答してください。',
       alternateLink: 'https://classroom.google.com/c/course-math/a/work-quiz',
       dueDate: '2026-09-04',
-      formUrls: ['https://docs.google.com/forms/d/quiz-form-id/viewform'],
+      forms: [
+        {
+          resolution: 'resolved',
+          sourceUrl: 'https://docs.google.com/forms/d/quiz-form-id/viewform',
+          formId: 'quiz-form-id',
+          formIdType: 'standard',
+          formUrl: 'https://docs.google.com/forms/d/quiz-form-id/viewform',
+        },
+      ],
       status: 'unsubmitted',
     })
+  })
+
+  it('stores each distribution item once with structured Forms and skips empty materials', async () => {
+    await syncClassroomCourses({
+      fetchImplementation: createFetch({
+        courses: [
+          {
+            id: 'course-1',
+            name: '数学',
+            items: [
+              {
+                itemId: 'work-1',
+                itemType: 'courseWork',
+                title: '課題',
+                courseWorkType: 'ASSIGNMENT',
+                submissionStatus: 'unsubmitted',
+                creationTime: '2026-08-03T00:00:00Z',
+                forms: [],
+              },
+              {
+                itemId: 'material-1',
+                itemType: 'courseWorkMaterial',
+                submissionStatus: 'untracked',
+                title: '資料',
+                creationTime: '2026-08-02T00:00:00Z',
+                forms: [
+                  {
+                    resolution: 'unresolved',
+                    sourceUrl: 'https://forms.gle/material',
+                    reason: 'short_url_resolution_failed',
+                  },
+                ],
+              },
+              {
+                itemId: 'material-2',
+                itemType: 'courseWorkMaterial',
+                submissionStatus: 'untracked',
+                title: 'リンクのみ',
+                creationTime: '2026-08-01T00:00:00Z',
+                forms: [],
+              },
+              {
+                itemId: 'announcement-1',
+                itemType: 'announcement',
+                submissionStatus: 'untracked',
+                title: '連絡',
+                creationTime: '2026-08-04T00:00:00Z',
+                forms: [
+                  {
+                    resolution: 'resolved',
+                    sourceUrl: 'https://docs.google.com/forms/d/form/viewform',
+                    formId: 'form',
+                    formIdType: 'standard',
+                    formUrl: 'https://docs.google.com/forms/d/form/viewform',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+      repository,
+      now: NOW,
+    })
+
+    const tasks = await repository.getAllTasks()
+    expect(tasks).toHaveLength(3)
+    expect(
+      tasks
+        .map((task) => [task.itemType, task.itemId])
+        .sort((a, b) => String(a[1]).localeCompare(String(b[1]))),
+    ).toEqual([
+      ['announcement', 'announcement-1'],
+      ['courseWorkMaterial', 'material-1'],
+      ['courseWork', 'work-1'],
+    ])
+    expect(tasks.find((task) => task.itemId === 'material-1')?.forms).toEqual([
+      {
+        resolution: 'unresolved',
+        sourceUrl: 'https://forms.gle/material',
+        reason: 'short_url_resolution_failed',
+      },
+    ])
+    expect(
+      tasks.find((task) => task.itemId === 'announcement-1')?.dueDate,
+    ).toBe(undefined)
   })
 
   it('keeps every Form URL of a task that has more than one Form', async () => {
@@ -100,7 +192,11 @@ describe('syncClassroomCourses', () => {
     const tasks = await repository.getAllTasks()
 
     expect(
-      tasks.find((task) => task.courseWorkId === 'work-two-forms')?.formUrls,
+      tasks
+        .find((task) => task.itemId === 'work-two-forms')
+        ?.forms.map((form) =>
+          form.resolution === 'resolved' ? form.formUrl : form.sourceUrl,
+        ),
     ).toEqual([
       'https://docs.google.com/forms/d/review-form-id/viewform',
       'https://docs.google.com/forms/d/e/survey-form-id/viewform',
@@ -114,26 +210,34 @@ describe('syncClassroomCourses', () => {
       now: NOW,
     })
     const tasks = await repository.getAllTasks()
-    const undatedTask = tasks.find(
-      (task) => task.courseWorkId === 'work-no-due-date',
-    )
+    const undatedTask = tasks.find((task) => task.itemId === 'work-no-due-date')
 
     expect(undatedTask?.dueDate).toBeUndefined()
     expect(undatedTask).toMatchObject({
       courseWorkType: 'SHORT_ANSWER_QUESTION',
-      formUrls: [],
+      forms: [],
       status: 'unsubmitted',
     })
   })
 
-  it('keeps the internal UUID and the local status when a course is synced again', async () => {
+  it('uses Classroom submission status on resync while preserving UUID and clearing stale submittedAt', async () => {
+    const submittedFixture = {
+      courses: activeCourseListFixture.courses.map((course) => ({
+        ...course,
+        items: course.items.map((item) =>
+          item.itemId === 'work-quiz'
+            ? { ...item, submissionStatus: 'submitted' as const }
+            : item,
+        ),
+      })),
+    }
     await syncClassroomCourses({
-      fetchImplementation: createFetch(activeCourseListFixture),
+      fetchImplementation: createFetch(submittedFixture),
       repository,
       now: NOW,
     })
     const targetTask = (await repository.getAllTasks()).find(
-      (task) => task.courseWorkId === 'work-quiz',
+      (task) => task.itemId === 'work-quiz',
     )
     expect(targetTask).toBeDefined()
     await database.tasks.update(targetTask!.id, {
@@ -142,18 +246,14 @@ describe('syncClassroomCourses', () => {
     })
 
     const renamedFixture = {
-      courses: [
-        {
-          ...activeCourseListFixture.courses[0],
-          courseWork: activeCourseListFixture.courses[0]!.courseWork.map(
-            (courseWork) =>
-              courseWork.courseWorkId === 'work-quiz'
-                ? { ...courseWork, title: '確認テスト（再提出）' }
-                : courseWork,
-          ),
-        },
-        activeCourseListFixture.courses[1],
-      ],
+      courses: activeCourseListFixture.courses.map((course) => ({
+        ...course,
+        items: course.items.map((item) =>
+          item.itemId === 'work-quiz'
+            ? { ...item, title: '確認テスト（再提出）' }
+            : item,
+        ),
+      })),
     }
 
     await syncClassroomCourses({
@@ -164,17 +264,100 @@ describe('syncClassroomCourses', () => {
 
     const tasks = await repository.getAllTasks()
     expect(tasks).toHaveLength(3)
-    expect(
-      tasks.find((task) => task.courseWorkId === 'work-quiz'),
-    ).toMatchObject({
+    expect(tasks.find((task) => task.itemId === 'work-quiz')).toMatchObject({
       id: targetTask!.id,
       title: '確認テスト（再提出）',
-      status: 'submitted',
-      submittedAt: '2026-08-30T09:00:00.000Z',
+      status: 'unsubmitted',
     })
+    expect(
+      tasks.find((task) => task.itemId === 'work-quiz'),
+    ).not.toHaveProperty('submittedAt')
     expect(await repository.getSyncStates()).toEqual([
       { courseId: 'course-empty', fetchedDate: '2026-09-01' },
       { courseId: 'course-math', fetchedDate: '2026-09-01' },
+    ])
+  })
+
+  it('overwrites a locally stored status with the untracked state Classroom reports', async () => {
+    const materialResponse = createCourseListResponse([
+      {
+        id: 'course-1',
+        name: '数学',
+        items: [
+          {
+            itemId: 'material-1',
+            itemType: 'courseWorkMaterial',
+            submissionStatus: 'untracked',
+            title: '資料',
+            creationTime: '2026-08-02T00:00:00Z',
+            forms: [
+              {
+                resolution: 'resolved',
+                sourceUrl: 'https://docs.google.com/forms/d/form/viewform',
+                formId: 'form',
+                formIdType: 'standard',
+                formUrl: 'https://docs.google.com/forms/d/form/viewform',
+              },
+            ],
+          },
+        ],
+      },
+    ])
+
+    await syncClassroomCourses({
+      fetchImplementation: createFetch(materialResponse),
+      repository,
+      now: NOW,
+    })
+    const storedMaterial = (await repository.getAllTasks())[0]
+    expect(storedMaterial).toMatchObject({ status: 'untracked' })
+
+    await database.tasks.update(storedMaterial!.id, {
+      status: 'submitted',
+      submittedAt: '2026-08-30T09:00:00.000Z',
+    })
+
+    await syncClassroomCourses({
+      fetchImplementation: createFetch(materialResponse),
+      repository,
+      now: NOW,
+    })
+
+    const resynced = (await repository.getAllTasks())[0]
+    expect(resynced).toMatchObject({
+      id: storedMaterial!.id,
+      status: 'untracked',
+    })
+    expect(resynced).not.toHaveProperty('submittedAt')
+  })
+
+  it('keeps course work assigned to other students out of the submitted state', async () => {
+    await syncClassroomCourses({
+      fetchImplementation: createFetch(
+        createCourseListResponse([
+          {
+            id: 'course-1',
+            name: '数学',
+            items: [
+              {
+                itemId: 'work-1',
+                itemType: 'courseWork',
+                title: '個別割り当ての課題',
+                courseWorkType: 'ASSIGNMENT',
+                submissionStatus: 'untracked',
+                creationTime: '2026-08-03T00:00:00Z',
+                forms: [],
+              },
+            ],
+          },
+        ]),
+      ),
+      repository,
+      now: NOW,
+    })
+
+    expect(await repository.getIncompleteTasks()).toMatchObject([
+      { itemId: 'work-1', status: 'untracked' },
     ])
   })
 
@@ -212,8 +395,8 @@ describe('syncClassroomCourses', () => {
       syncClassroomCourses({
         fetchImplementation: createFetch(
           createCourseListResponse([
-            { id: 'course-math', name: '数学I', courseWork: [] },
-            { id: 'course-broken', courseWork: [] },
+            { id: 'course-math', name: '数学I', items: [] },
+            { id: 'course-broken', items: [] },
           ]),
         ),
         repository,
@@ -274,7 +457,7 @@ describe('syncClassroomCourses', () => {
             {
               ...activeCourseListFixture.courses[0],
               name: '数学I（改称）',
-              courseWork: [],
+              items: [],
             },
             activeCourseListFixture.courses[1],
           ],
@@ -318,19 +501,30 @@ describe('syncClassroomCourses', () => {
           {
             id: 'course-1',
             name: '数学I',
-            courseWork: [
+            items: [
               {
-                courseWorkId: 'work-1',
+                itemId: 'work-1',
+                itemType: 'courseWork',
                 courseWorkType: 'ASSIGNMENT',
+                creationTime: '2026-08-01T00:00:00Z',
                 title: '確認テスト',
+                submissionStatus: 'unsubmitted',
                 description: '',
                 forms: [
                   {
+                    resolution: 'resolved',
+                    sourceUrl:
+                      'https://docs.google.com/forms/d/form-id/viewform',
                     formId: 'form-id',
+                    formIdType: 'standard',
                     formUrl: 'https://docs.google.com/forms/d/form-id/viewform',
                   },
                   {
+                    resolution: 'resolved',
+                    sourceUrl:
+                      'https://docs.google.com/forms/d/form-id/viewform',
                     formId: 'form-id',
+                    formIdType: 'standard',
                     formUrl: 'https://docs.google.com/forms/d/form-id/viewform',
                   },
                 ],
@@ -346,7 +540,15 @@ describe('syncClassroomCourses', () => {
     expect(await repository.getAllTasks()).toMatchObject([
       {
         description: '',
-        formUrls: ['https://docs.google.com/forms/d/form-id/viewform'],
+        forms: [
+          {
+            resolution: 'resolved',
+            sourceUrl: 'https://docs.google.com/forms/d/form-id/viewform',
+            formId: 'form-id',
+            formIdType: 'standard',
+            formUrl: 'https://docs.google.com/forms/d/form-id/viewform',
+          },
+        ],
       },
     ])
   })

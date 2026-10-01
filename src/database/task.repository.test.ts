@@ -12,11 +12,13 @@ function createTaskInput(
   return {
     courseId: 'course-1',
     courseName: '数学I',
-    courseWorkId: 'work-1',
+    itemType: 'courseWork',
+    itemId: 'work-1',
     courseWorkType: 'ASSIGNMENT',
+    creationTime: '2026-07-20T00:00:00.000Z',
     subjectName: '数学',
     title: '一次方程式',
-    formUrls: [],
+    forms: [],
     status: 'unsubmitted',
     ...overrides,
   }
@@ -75,7 +77,7 @@ describe('TaskRepository', () => {
         createTaskInput({
           courseId: 'course-2',
           courseName: '英語',
-          courseWorkId: 'work-1',
+          itemId: 'work-1',
         }),
       ],
     })
@@ -97,7 +99,7 @@ describe('TaskRepository', () => {
       tasks: [
         createTaskInput({
           courseId: 'course-2',
-          courseWorkId: 'work-2',
+          itemId: 'work-2',
         }),
       ],
     })
@@ -109,7 +111,7 @@ describe('TaskRepository', () => {
     })
 
     expect(await repository.getAllTasks()).toMatchObject([
-      { courseId: 'course-2', courseWorkId: 'work-2' },
+      { courseId: 'course-2', itemId: 'work-2' },
     ])
     expect(await repository.getSyncStates()).toEqual([
       { courseId: 'course-1', fetchedDate: '2026-07-26' },
@@ -141,7 +143,7 @@ describe('TaskRepository', () => {
       {
         courseId: 'course-1',
         courseName: '数学I',
-        courseWorkId: 'work-1',
+        itemId: 'work-1',
       },
     ])
     expect(await repository.getSyncStates()).toEqual([
@@ -216,7 +218,7 @@ describe('TaskRepository', () => {
       tasks: [
         createTaskInput({
           courseId: 'course-2',
-          courseWorkId: 'work-2',
+          itemId: 'work-2',
         }),
       ],
     })
@@ -265,21 +267,21 @@ describe('TaskRepository', () => {
       fetchedDate: '2026-07-26',
       tasks: [
         createTaskInput({
-          courseWorkId: 'undated',
+          itemId: 'undated',
           title: '期限なし',
         }),
         createTaskInput({
-          courseWorkId: 'later',
+          itemId: 'later',
           title: '後の課題',
           dueDate: '2026-07-28',
         }),
         createTaskInput({
-          courseWorkId: 'earlier',
+          itemId: 'earlier',
           title: '先の課題',
           dueDate: '2026-07-27',
         }),
         createTaskInput({
-          courseWorkId: 'submitted',
+          itemId: 'submitted',
           title: '提出済み',
           dueDate: '2026-07-26',
           status: 'submitted',
@@ -288,12 +290,79 @@ describe('TaskRepository', () => {
       ],
     })
 
-    const tasks = await repository.getUnsubmittedTasks()
-    expect(tasks.map((task) => task.courseWorkId)).toEqual([
+    const tasks = await repository.getIncompleteTasks()
+    expect(tasks.map((task) => task.itemId)).toEqual([
       'earlier',
       'later',
       'undated',
     ])
+  })
+
+  it('excludes submitted undated tasks while retaining overdue and undated unsubmitted tasks', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-26',
+      tasks: [
+        createTaskInput({
+          itemId: 'submitted-undated',
+          title: '提出済み・期限なし',
+          status: 'submitted',
+        }),
+        createTaskInput({
+          itemId: 'overdue',
+          title: '期限切れ',
+          dueDate: '2026-07-25',
+        }),
+        createTaskInput({
+          itemId: 'unsubmitted-undated',
+          title: '未提出・期限なし',
+        }),
+      ],
+    })
+
+    expect(
+      (await repository.getIncompleteTasks()).map((task) => task.itemId),
+    ).toEqual(['overdue', 'unsubmitted-undated'])
+  })
+
+  it('separates the main list from the calendar for untracked items', async () => {
+    await repository.replaceCourseSnapshot({
+      courseId: 'course-1',
+      fetchedDate: '2026-07-26',
+      tasks: [
+        createTaskInput({
+          itemId: 'unsubmitted',
+          title: '未提出の課題',
+          dueDate: '2026-07-27',
+        }),
+        createTaskInput({
+          itemId: 'untracked',
+          title: '提出記録のない配布項目',
+          dueDate: '2026-07-28',
+          status: 'untracked',
+        }),
+        createTaskInput({
+          itemId: 'submitted',
+          title: '提出済みの課題',
+          dueDate: '2026-07-27',
+          status: 'submitted',
+        }),
+      ],
+    })
+
+    // The main list shows everything that is not submitted.
+    expect(
+      (await repository.getIncompleteTasks()).map((task) => task.itemId),
+    ).toEqual(['unsubmitted', 'untracked'])
+    // The calendar and the deadline notifications stay strictly unsubmitted.
+    expect(
+      (
+        await repository.getUnsubmittedTasksInDateRange(
+          '2026-07-26',
+          '2026-07-31',
+        )
+      ).map((task) => task.itemId),
+    ).toEqual(['unsubmitted'])
   })
 
   it('returns only unsubmitted dated tasks inside the calendar range', async () => {
@@ -302,18 +371,18 @@ describe('TaskRepository', () => {
       fetchedDate: '2026-07-26',
       tasks: [
         createTaskInput({
-          courseWorkId: 'inside',
+          itemId: 'inside',
           dueDate: '2026-07-27',
         }),
         createTaskInput({
-          courseWorkId: 'outside',
+          itemId: 'outside',
           dueDate: '2026-08-01',
         }),
         createTaskInput({
-          courseWorkId: 'undated',
+          itemId: 'undated',
         }),
         createTaskInput({
-          courseWorkId: 'submitted',
+          itemId: 'submitted',
           dueDate: '2026-07-28',
           status: 'submitted',
         }),
@@ -324,7 +393,7 @@ describe('TaskRepository', () => {
       '2026-07-26',
       '2026-07-31',
     )
-    expect(tasks.map((task) => task.courseWorkId)).toEqual(['inside'])
+    expect(tasks.map((task) => task.itemId)).toEqual(['inside'])
   })
 
   //同日期限の課題を科目名順に固定
@@ -334,17 +403,17 @@ describe('TaskRepository', () => {
       fetchedDate: '2026-07-26',
       tasks: [
         createTaskInput({
-          courseWorkId: 'task-z',
+          itemId: 'task-z',
           title: '数学',
           dueDate: '2026-07-27',
         }),
         createTaskInput({
-          courseWorkId: 'task-a',
+          itemId: 'task-a',
           title: '英語',
           dueDate: '2026-07-27',
         }),
         createTaskInput({
-          courseWorkId: 'task-m',
+          itemId: 'task-m',
           title: '国語',
           dueDate: '2026-07-27',
         }),
@@ -443,26 +512,26 @@ describe('TaskRepository', () => {
       fetchedDate: '2026-07-26',
       tasks: [
         createTaskInput({
-          courseWorkId: 'task-1',
+          itemId: 'task-1',
           title: '数学',
           dueDate: '2026-07-27',
         }),
         createTaskInput({
-          courseWorkId: 'task-2',
+          itemId: 'task-2',
           title: '英語',
           dueDate: '2026-07-27',
         }),
         createTaskInput({
-          courseWorkId: 'task-3',
+          itemId: 'task-3',
           title: '国語',
           dueDate: '2026-07-28',
         }),
         createTaskInput({
-          courseWorkId: 'task-4',
+          itemId: 'task-4',
           title: '期限なし',
         }),
         createTaskInput({
-          courseWorkId: 'task-5',
+          itemId: 'task-5',
           title: '提出済み',
           dueDate: '2026-07-27',
           status: 'submitted',
@@ -481,17 +550,17 @@ describe('TaskRepository', () => {
     expect(tasks['2026-07-27']).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          courseWorkId: 'task-1',
+          itemId: 'task-1',
         }),
         expect.objectContaining({
-          courseWorkId: 'task-2',
+          itemId: 'task-2',
         }),
       ]),
     )
 
     expect(tasks['2026-07-28']).toEqual([
       expect.objectContaining({
-        courseWorkId: 'task-3',
+        itemId: 'task-3',
       }),
     ])
   })
@@ -503,12 +572,12 @@ describe('TaskRepository', () => {
       fetchedDate: '2026-07-31',
       tasks: [
         createTaskInput({
-          courseWorkId: 'july-last',
+          itemId: 'july-last',
           title: '7月末',
           dueDate: '2026-07-31',
         }),
         createTaskInput({
-          courseWorkId: 'august-first',
+          itemId: 'august-first',
           title: '8月初日',
           dueDate: '2026-08-01',
         }),
@@ -533,12 +602,12 @@ describe('TaskRepository', () => {
       fetchedDate: '2026-12-30',
       tasks: [
         createTaskInput({
-          courseWorkId: 'task-1',
+          itemId: 'task-1',
           title: '年末の課題',
           dueDate: '2026-12-31',
         }),
         createTaskInput({
-          courseWorkId: 'task-2',
+          itemId: 'task-2',
           title: '年始の課題',
           dueDate: '2027-01-01',
         }),
@@ -553,12 +622,12 @@ describe('TaskRepository', () => {
     expect(tasks).toEqual({
       '2026-12-31': [
         expect.objectContaining({
-          courseWorkId: 'task-1',
+          itemId: 'task-1',
         }),
       ],
       '2027-01-01': [
         expect.objectContaining({
-          courseWorkId: 'task-2',
+          itemId: 'task-2',
         }),
       ],
     })
@@ -571,17 +640,17 @@ describe('TaskRepository', () => {
       fetchedDate: '2028-02-27',
       tasks: [
         createTaskInput({
-          courseWorkId: 'feb-28',
+          itemId: 'feb-28',
           title: '2月28日の課題',
           dueDate: '2028-02-28',
         }),
         createTaskInput({
-          courseWorkId: 'feb-29',
+          itemId: 'feb-29',
           title: 'うるう日の課題',
           dueDate: '2028-02-29',
         }),
         createTaskInput({
-          courseWorkId: 'mar-01',
+          itemId: 'mar-01',
           title: '3月1日の課題',
           dueDate: '2028-03-01',
         }),
@@ -595,19 +664,19 @@ describe('TaskRepository', () => {
 
     expect(tasks['2028-02-28']).toEqual([
       expect.objectContaining({
-        courseWorkId: 'feb-28',
+        itemId: 'feb-28',
       }),
     ])
 
     expect(tasks['2028-02-29']).toEqual([
       expect.objectContaining({
-        courseWorkId: 'feb-29',
+        itemId: 'feb-29',
       }),
     ])
 
     expect(tasks['2028-03-01']).toEqual([
       expect.objectContaining({
-        courseWorkId: 'mar-01',
+        itemId: 'mar-01',
       }),
     ])
   })
@@ -621,7 +690,7 @@ describe('TaskRepository', () => {
         createTaskInput({
           courseId: 'course-a',
           courseName: '数学',
-          courseWorkId: 'work-a',
+          itemId: 'work-a',
           title: '課題',
           dueDate: '2026-08-20',
         }),
@@ -635,7 +704,7 @@ describe('TaskRepository', () => {
         createTaskInput({
           courseId: 'course-b',
           courseName: '英語',
-          courseWorkId: 'work-b',
+          itemId: 'work-b',
           title: '課題',
           dueDate: '2026-08-20',
         }),
