@@ -35,7 +35,7 @@ export interface UseTasksOptions {
   /** Verbose alias for callers that prefer the production function name. */
   syncClassroomCourses?: SyncClassroomCoursesImplementation
   /** Repository used for the post-sync task read and passed to sync. */
-  repository?: Pick<TaskRepository, 'getUnsubmittedTasks'> | TaskRepository
+  repository?: Pick<TaskRepository, 'getIncompleteTasks'> | TaskRepository
   /** Fetch implementation passed to the Classroom API by the default sync. */
   fetchImplementation?: SyncClassroomCoursesOptions['fetchImplementation']
   /** Clock used to calculate local-date due warnings. */
@@ -60,7 +60,7 @@ const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000
 const MAIN_LIST_MAX_PAST_DAYS = 7
 
 type RepositoryLike =
-  Pick<TaskRepository, 'getUnsubmittedTasks'> | TaskRepository
+  Pick<TaskRepository, 'getIncompleteTasks'> | TaskRepository
 
 interface RepositoryQueueJob {
   run: () => Promise<void>
@@ -192,7 +192,15 @@ export function toTask(record: TaskRecord, index: number, now: Date): Task {
     // separate concerns. A task returned here is unsubmitted by Classroom;
     // its Form response starts as unreviewed until Gmail is checked.
     answerStatus: 'unreviewed',
-    formUrls: [...record.formUrls],
+    // `forms` is the stored representation; the UI still passes plain URLs to
+    // the answer confirmation API. Unresolved references have no URL to check.
+    formUrls: [
+      ...new Set(
+        record.forms.flatMap((form) =>
+          form.resolution === 'resolved' ? [form.formUrl] : [],
+        ),
+      ),
+    ],
   }
 }
 
@@ -216,7 +224,7 @@ function useTasksStandalone(options: UseTasksOptions = {}): UseTasksResult {
         fetchImplementation: options.fetchImplementation,
         now,
       })
-      const records = await repository.getUnsubmittedTasks()
+      const records = await repository.getIncompleteTasks()
 
       if (disposed || currentRequestId !== requestId) return
 
@@ -331,7 +339,7 @@ function useTasksFromContext(
     tasks.value = []
     error.value = null
     const read = repository
-      .getUnsubmittedTasks()
+      .getIncompleteTasks()
       .then((records) => {
         if (disposed || revision !== syncContext.revision.value) return
 

@@ -1,22 +1,21 @@
 import type { AnswerStatus } from './task.types'
 
 export type FormConfirmationStatus =
-  | 'submitted'
-  | 'unreviewable'
-  | 'needsReview'
-  | 'answered'
-  | 'needs_review'
-  | 'pending'
+  'submitted' | 'unreviewable' | 'needsReview'
+
+export type FormConfirmationReason = 'standard_id_not_matchable'
 
 export interface FormConfirmationResult {
   formUrl: string
   status: FormConfirmationStatus
+  reason?: FormConfirmationReason
 }
 
 export type AnswerConfirmationErrorCode =
   | 'permission_denied'
   | 'session_expired'
   | 'temporary_error'
+  | 'invalid_form_url'
   | 'invalid_backend_response'
 
 export interface AnswerConfirmationError extends Error {
@@ -38,6 +37,10 @@ export interface CheckTaskAnswerConfirmationInput {
 
 export type FetchImplementation = typeof fetch
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
 export function createAnswerConfirmationError(
   code: AnswerConfirmationErrorCode,
   status = 500,
@@ -57,48 +60,48 @@ export function createAnswerConfirmationError(
 }
 
 export function extractFormId(formUrl: string): string {
+  return extractFormIdDetails(formUrl).formId
+}
+
+export interface FormIdDetails {
+  formId: string
+  formIdType: 'standard' | 'published'
+}
+
+export function extractFormIdDetails(formUrl: string): FormIdDetails {
   try {
     const url = new URL(formUrl)
-    const segments = url.pathname.split('/').filter(Boolean)
-
-    // Google Forms' canonical URLs use an action name (viewform/edit) as the
-    // final path segment. The backend contract needs the opaque ID instead.
     if (
-      url.hostname === 'docs.google.com' ||
-      url.hostname === 'forms.google.com'
+      url.protocol !== 'https:' ||
+      url.port !== '' ||
+      url.username !== '' ||
+      url.password !== '' ||
+      (url.hostname !== 'docs.google.com' &&
+        url.hostname !== 'forms.google.com')
     ) {
-      const formsIndex = segments.indexOf('forms')
-      if (segments[formsIndex + 1] === 'd') {
-        let idIndex = formsIndex + 2
-        if (segments[idIndex] === 'e') {
-          idIndex += 1
-        }
-
-        const formId = segments[idIndex]
-        const action = segments[idIndex + 1]
-        if (
-          formId !== undefined &&
-          segments.length === idIndex + 2 &&
-          (action === 'viewform' || action === 'edit')
-        ) {
-          return formId
-        }
-      }
+      throw new Error('unsupported URL')
     }
 
-    if (segments.length > 0) {
-      try {
-        return decodeURIComponent(segments[segments.length - 1]!)
-      } catch {
-        return segments[segments.length - 1]!
-      }
+    const prefix = url.hostname === 'docs.google.com' ? '/forms' : '(?:/forms)?'
+    const publishedMatch = new RegExp(
+      `^${prefix}/d/e/([A-Za-z0-9_-]{1,512})/viewform/?$`,
+    ).exec(url.pathname)
+    if (publishedMatch !== null) {
+      return { formId: publishedMatch[1]!, formIdType: 'published' }
+    }
+
+    const standardMatch = new RegExp(
+      `^${prefix}/d/([A-Za-z0-9_-]{1,512})/(?:viewform|edit)/?$`,
+    ).exec(url.pathname)
+    if (standardMatch !== null && standardMatch[1] !== 'e') {
+      return { formId: standardMatch[1]!, formIdType: 'standard' }
     }
   } catch {
-    // not a valid URL, fall back to string manipulation
+    // The stable validation error below deliberately replaces legacy fallback
+    // parsing of arbitrary URL path segments and raw IDs.
   }
-  const clean = formUrl.replace(/\/+$/, '')
-  const lastPart = clean.split('/').pop()
-  return lastPart || formUrl
+
+  throw createAnswerConfirmationError('invalid_form_url', 400)
 }
 
 export function aggregateAnswerConfirmationResults(
@@ -109,25 +112,20 @@ export function aggregateAnswerConfirmationResults(
   }
 
   const hasNeedsReview = results.some(
-    (result) =>
-      result.status === 'needsReview' || result.status === 'needs_review',
+    (result) => result.status === 'needsReview',
   )
 
   if (hasNeedsReview) {
     return 'needsReview'
   }
 
-  const allSubmitted = results.every(
-    (result) => result.status === 'submitted' || result.status === 'answered',
-  )
+  const allSubmitted = results.every((result) => result.status === 'submitted')
 
   if (allSubmitted) {
     return 'submitted'
   }
 
-  const hasSubmitted = results.some(
-    (result) => result.status === 'submitted' || result.status === 'answered',
-  )
+  const hasSubmitted = results.some((result) => result.status === 'submitted')
 
   if (hasSubmitted) {
     return 'needsReview'
@@ -145,8 +143,22 @@ async function readAnswerConfirmationError(
     }
 
     if (typeof responseBody.error?.code === 'string') {
-      const code = responseBody.error.code as AnswerConfirmationErrorCode
-      return createAnswerConfirmationError(code, response.status)
+      const code = responseBody.error.code
+      if (code === 'session_expired') {
+        return createAnswerConfirmationError('session_expired', response.status)
+      }
+      if (code === 'gmail_forbidden') {
+        return createAnswerConfirmationError(
+          'permission_denied',
+          response.status,
+        )
+      }
+      if (code === 'invalid_form_id' || code === 'invalid_form_id_type') {
+        return createAnswerConfirmationError(
+          'invalid_form_url',
+          response.status,
+        )
+      }
     }
   } catch {
     // ignore malformed backend payloads and fall back to a stable client error
@@ -169,9 +181,9 @@ export async function checkTaskAnswerConfirmation(
 
   const formResults: FormConfirmationResult[] = await Promise.all(
     input.formUrls.map(async (formUrl) => {
-      const formId = extractFormId(formUrl)
+      const { formId, formIdType } = extractFormIdDetails(formUrl)
       const response = await fetchImplementation(
-        `/api/gmail/forms/${encodeURIComponent(formId)}/response`,
+        `/api/gmail/forms/${encodeURIComponent(formId)}/response?formIdType=${formIdType}`,
         {
           method: 'GET',
           credentials: 'same-origin',
@@ -182,9 +194,14 @@ export async function checkTaskAnswerConfirmation(
         throw await readAnswerConfirmationError(response)
       }
 
-      const responseBody = (await response.json()) as {
-        formId?: unknown
-        status?: unknown
+      let responseBody: unknown
+      try {
+        responseBody = await response.json()
+      } catch {
+        throw createAnswerConfirmationError('invalid_backend_response')
+      }
+      if (!isRecord(responseBody)) {
+        throw createAnswerConfirmationError('invalid_backend_response')
       }
 
       const rawStatus = responseBody.status
@@ -192,10 +209,17 @@ export async function checkTaskAnswerConfirmation(
         typeof rawStatus !== 'string' ||
         (rawStatus !== 'submitted' &&
           rawStatus !== 'unreviewable' &&
-          rawStatus !== 'needsReview' &&
-          rawStatus !== 'answered' &&
-          rawStatus !== 'needs_review' &&
-          rawStatus !== 'pending')
+          rawStatus !== 'needsReview')
+      ) {
+        throw createAnswerConfirmationError('invalid_backend_response')
+      }
+
+      const reason = responseBody.reason
+      if (
+        (formIdType === 'standard' &&
+          (rawStatus !== 'unreviewable' ||
+            reason !== 'standard_id_not_matchable')) ||
+        (formIdType === 'published' && reason !== undefined)
       ) {
         throw createAnswerConfirmationError('invalid_backend_response')
       }
@@ -203,6 +227,9 @@ export async function checkTaskAnswerConfirmation(
       return {
         formUrl,
         status: rawStatus as FormConfirmationStatus,
+        ...(reason === undefined
+          ? {}
+          : { reason: reason as FormConfirmationReason }),
       }
     }),
   )
@@ -221,14 +248,13 @@ export const mockAnswerConfirmationApi = {
     const formResults: FormConfirmationResult[] = input.formUrls.map(
       (formUrl) => {
         const seed = formUrl.split('/').at(-1) ?? formUrl
-        const status: FormConfirmationStatus =
-          seed.includes('answered') || seed.includes('submitted')
-            ? 'submitted'
-            : seed.includes('needs')
-              ? 'needsReview'
-              : seed.includes('unreviewable')
-                ? 'unreviewable'
-                : 'unreviewable'
+        const status: FormConfirmationStatus = seed.includes('submitted')
+          ? 'submitted'
+          : seed.includes('needs')
+            ? 'needsReview'
+            : seed.includes('unreviewable')
+              ? 'unreviewable'
+              : 'unreviewable'
 
         return { formUrl, status }
       },

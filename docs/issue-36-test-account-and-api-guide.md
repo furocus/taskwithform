@@ -43,17 +43,19 @@
 
 ### 2.2 ClassroomとFormのケースを作る
 
-Classroom APIは、生徒役が参加している`ACTIVE`コースと、その中の`PUBLISHED`課題だけを取得します。下書き、アーカイブ済みコース、教師としてだけ参加しているコースは、この確認データの代用になりません。
+Classroom APIは、生徒役が参加している`ACTIVE`コースと、その中の`PUBLISHED`課題・資料・ストリーム投稿を取得します。下書き、アーカイブ済みコース、教師としてだけ参加しているコースは、この確認データの代用になりません。
 
 次の最小構成を作ります。タイトルにはケース番号を付け、実データと混ざらないようにします。
 
-| ケース | 準備内容                                                       | `coursework/forms`の期待結果          |
-| ------ | -------------------------------------------------------------- | ------------------------------------- |
-| C0     | `ACTIVE`コースを1つ作り、課題を0件にする                       | このコース由来の`courseWork`要素は0件 |
-| C1     | 別の`ACTIVE`コースに、添付なしの通常課題を`PUBLISHED`で1件作る | 課題が1件、`forms: []`                |
-| C2     | 同じコースに、Form以外の資料だけを添付した課題を1件作る        | 課題が1件、`forms: []`                |
-| C3     | Google Formを1件添付した課題を1件作る                          | 課題が1件、`forms`が1件               |
-| C4     | 異なるGoogle Formを2件添付した課題を1件作る                    | 課題が1件、`forms`が2件               |
+| ケース | 準備内容                                                       | `/courses/items`の期待結果       |
+| ------ | -------------------------------------------------------------- | -------------------------------- |
+| C0     | `ACTIVE`コースを1つ作り、課題を0件にする                       | このコースが`items: []`で返る    |
+| C1     | 別の`ACTIVE`コースに、添付なしの通常課題を`PUBLISHED`で1件作る | 課題が1件、`forms: []`           |
+| C2     | 同じコースに、Form以外の資料だけを添付した課題を1件作る        | 課題が1件、`forms: []`           |
+| C3     | Google Formを1件添付した課題を1件作る                          | 課題が1件、`forms`が1件          |
+| C4     | 異なるGoogle Formを2件添付した課題を1件作る                    | 課題が1件、`forms`が2件          |
+| C5     | Formを含む資料とストリーム投稿を各1件作る                      | 各項目が対応する`itemType`で返る |
+| C6     | 解決不能な`forms.gle`を含む項目を作る                          | 理由付き`resolution: unresolved` |
 
 各課題は生徒役から閲覧できることをブラウザで確認します。`description`、期限、Classroomの課題リンクは任意ですが、省略時のAPIレスポンスも確認したい場合はC1では設定せず、C3では設定するなどケースを分けます。
 
@@ -97,17 +99,19 @@ Gmail実装は送信者`forms-receipts-noreply@google.com`とForm IDで候補を
 
 `GOOGLE_CLIENT_ID`と`GOOGLE_CLIENT_SECRET`は必須です。`GOOGLE_REDIRECT_URI`と`FRONTEND_ORIGIN`を省略した場合、上記の値が既定値になります。Cloud側のURIとローカル値のscheme、host、port、path、末尾スラッシュが1文字でも違うとOAuthは成功しません。
 
-現行OAuthが要求するscopeは、次の3つだけです。すべて読み取り専用です。
+現行OAuthが要求するscopeは、次の5つです。すべて読み取り専用です。
 
 - `https://www.googleapis.com/auth/classroom.courses.readonly`
 - `https://www.googleapis.com/auth/classroom.coursework.me.readonly`
+- `https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly`
+- `https://www.googleapis.com/auth/classroom.announcements.readonly`
 - `https://www.googleapis.com/auth/gmail.readonly`
 
 バックエンドは過去のセッションとの互換性のため`classroom.student-submissions.me.readonly`も課題取得scopeとして受け入れますが、現行の認可URLは要求しません。検証用Cloud設定に書き足す必要はありません。
 
 本人の提出・返却・採点状態は、Classroom APIの[`courses.courseWork.studentSubmissions.list`](https://developers.google.com/workspace/classroom/reference/rest/v1/courses.courseWork.studentSubmissions/list)を`courseWorkId=-`、`userId=me`で呼び出して取得します。これは新しいAPI呼び出しですが、現行OAuthで要求済みの`classroom.coursework.me.readonly`に含まれるため、新しいscope、Google Cloud上の追加API有効化、既存利用者の再同意は不要です。古いセッションで必要scopeが付与されていない場合だけ、後述の手順で連携を解除して再ログインします。
 
-取得フィールドは`courseWorkId`、`state`、`assignedGrade`に限定します。提出物の添付ファイル、回答内容、ユーザー情報、Google APIの生レスポンスはアプリAPIへ返さず、課題ごとの`submissionStatus`へ正規化します。
+取得フィールドは`courseWorkId`、`state`、`assignedGrade`に限定します。提出物の添付ファイル、回答内容、ユーザー情報、Google APIの生レスポンスはアプリAPIへ返さず、配布項目ごとの`submissionStatus`へ正規化します。
 
 OAuthは`access_type=online`で、リフレッシュトークンを保存しません。アクセストークンとscopeはバックエンドのメモリセッションだけに保持されます。
 
@@ -118,7 +122,7 @@ OAuthは`access_type=online`で、リフレッシュトークンを保存しま�
 1. アプリでログアウトする。
 2. 生徒役Googleアカウントの「サードパーティ製のアプリとサービスへの接続」から、この検証用OAuthアプリのアクセスを削除する。
 3. ブラウザの検証用プロファイルだけを使い、`http://localhost:5173/login`から再ログインする。
-4. 同意画面に3つのread-only権限が表示されることを確認して許可する。
+4. 同意画面に5つのread-only権限が表示されることを確認して許可する。
 
 ## 4. ログインと安全なcurl確認
 
@@ -131,7 +135,7 @@ OAuthログインはブラウザ操作が必須です。`GET /api/auth/google`�
 ブラウザ内で確認するだけなら、DevToolsのConsoleから次のように実行できます。Cookie値はJavaScriptへ公開されません。
 
 ```js
-await fetch('/api/classroom/coursework/forms', {
+await fetch('/api/classroom/courses/items', {
   credentials: 'same-origin',
 }).then(async (response) => ({
   httpStatus: response.status,
@@ -165,25 +169,25 @@ curl --silent --show-error --include \
 
 作業終了時はshellを終了すれば`trap`がCookie jarを削除します。途中で終了する場合は`rm -f -- "$cookie_jar"`を実行してからshellを閉じます。
 
-## 5. `GET /api/classroom/courses/coursework`
+## 5. `GET /api/classroom/courses/items`
 
 ### 入力
 
 - Method: `GET`
-- Path: `/api/classroom/courses/coursework`
+- Path: `/api/classroom/courses/items`
 - Query/body: なし
 - 認証: `taskwithform.sid` Cookie
-- 必要scope: `classroom.courses.readonly`と、`classroom.coursework.me.readonly`または互換scopeの`classroom.student-submissions.me.readonly`
+- 必要scope: `classroom.courses.readonly`、`classroom.courseworkmaterials.readonly`、`classroom.announcements.readonly`と、`classroom.coursework.me.readonly`または互換scopeの`classroom.student-submissions.me.readonly`
 
 ```bash
 curl --silent --show-error --include \
   --cookie "$cookie_jar" \
-  http://localhost:3000/api/classroom/courses/coursework
+  http://localhost:3000/api/classroom/courses/items
 ```
 
 ### 成功レスポンス
 
-HTTP `200`で、対象は生徒役が参加する`ACTIVE`コース内の`PUBLISHED`課題です。Formなしの課題も返ります。
+HTTP `200`で、生徒役が参加する`ACTIVE`コース内の`PUBLISHED`な課題・資料・ストリーム投稿を返します。課題はFormの有無にかかわらず返り、資料と投稿はForm参照を含む項目だけを返します。取得経路はこのAPIへ一本化しており、旧`GET /api/classroom/courses/coursework`はHTTP `404`です。
 
 ```json
 {
@@ -191,17 +195,21 @@ HTTP `200`で、対象は生徒役が参加する`ACTIVE`コース内の`PUBLISH
     {
       "id": "test-course-id",
       "name": "検証用コース",
-      "courseWork": [
+      "items": [
         {
-          "courseWorkId": "test-work-id",
+          "itemId": "test-work-id",
+          "itemType": "courseWork",
           "courseWorkType": "ASSIGNMENT",
           "title": "C3 検証用1 Form",
           "description": "dummy",
           "alternateLink": "https://classroom.google.com/c/example/a/example/details",
           "dueDate": "2026-09-30",
+          "creationTime": "2026-09-01T00:00:00Z",
           "submissionStatus": "unsubmitted",
           "forms": [
             {
+              "resolution": "resolved",
+              "sourceUrl": "https://docs.google.com/forms/d/test-form-id/viewform",
               "formUrl": "https://docs.google.com/forms/d/test-form-id/viewform",
               "formId": "test-form-id",
               "formIdType": "standard"
@@ -214,12 +222,27 @@ HTTP `200`で、対象は生徒役が参加する`ACTIVE`コース内の`PUBLISH
 }
 ```
 
-`description`、`alternateLink`、`dueDate`はGoogle側に値がない場合は省略されます。`forms`は常に配列です。`formIdType`は標準URLの`standard`または公開URLの`published`です。`formId`はForms APIのcanonical resource IDではなく、Form URL中のopaque identifierです。
+`description`、`alternateLink`、`dueDate`はGoogle側に値がない場合は省略されます。`forms`は常に配列です。`submissionStatus`は全項目に必ず付き、値は`submitted`、`unsubmitted`、`untracked`の3値です。資料・ストリーム投稿には提出という概念がないため常に`untracked`です。`formIdType`は標準URLの`standard`または公開URLの`published`です。両ID空間の同一性は推測しません。`formId`はForms APIのcanonical resource IDではなく、Form URL中のopaque identifierです。
+
+短縮URLは`forms.gle`だけを対象に、次の契約で解決します。
+
+- `redirect: manual`、最大3 hop、1回のHTTPリクエストごとに5秒でタイムアウトする
+- 許可ホストは正確に`docs.google.com`、`forms.google.com`、`forms.gle`だけとし、HTTPS標準ポート、userinfoなしを要求する
+- Cookie、Authorization、referrerなどの認証・閲覧情報を送らず、Form本体のHTMLも解析しない
+- ネットワーク失敗、タイムアウト、hop超過、Location欠落、許可外URL、canonical Form URLへ到達できない場合は`{"resolution":"unresolved","sourceUrl":"...","reason":"short_url_resolution_failed"}`を返す
+- 自動リトライは行わない。同一短縮URLのPromiseを1回の`GET /items`処理内だけで共有し、プロセスをまたぐキャッシュは持たない
+
+`unresolved`はURL展開の失敗であり、回答照合結果の`unreviewable`とは別の値です。前者は回答確認APIへ送らず、Classroomデータを再取得してだけ再試行します。GoogleのFormタイトルは取得フィールドにもAPIレスポンスにも含めません。
 
 `submissionStatus`はClassroomの本人用`StudentSubmission`から次の規則で正規化します。
 
 - `submitted`: `state`が`TURNED_IN`または`RETURNED`、あるいは`assignedGrade`が存在する
 - `unsubmitted`: `state`が`NEW`、`CREATED`または`RECLAIMED_BY_STUDENT`
+- `untracked`: 本人の`StudentSubmission`が存在しない課題（教師が一部の生徒にだけ割り当てた課題）と、資料・ストリーム投稿
+
+提出レコードの欠落はエラーにしません。個別割り当ての課題が1件あるだけでコース全体の同期が失敗するのを避けるためです。同一`courseWorkId`の提出物が重複する場合と、未知の`state`や不正な`assignedGrade`を受け取った場合は、これまでどおり`invalid_response`にして部分更新を行いません。
+
+メイン課題一覧は`unsubmitted`と`untracked`を表示し、`submitted`だけを除外します。カレンダーと今日締切通知は`unsubmitted`だけを対象にするため、資料・ストリーム投稿と個別割り当ての課題は期限通知に現れません。
 
 期限の有無や添付ファイルの有無は提出判定に使いません。期限なしでも提出済みなら一覧から除外し、ファイルを添付しただけでClassroom上の提出操作をしていない課題は未提出として残します。
 
@@ -231,7 +254,7 @@ HTTP `200`で、対象は生徒役が参加する`ACTIVE`コース内の`PUBLISH
 
 この絞り込みはフロントエンドの一覧表示だけに適用します。APIレスポンス、DBのレコード、カレンダー表示、今日締切通知は対象外で、8日以上前の未提出課題もそれらには残ります。
 
-C0の空コースはこのAPIだけではコース要素として現れません。必要なら`GET /api/classroom/courses/count`で`ACTIVE`コース総数を併せて確認し、C0とデータ入りコースの合計件数になっていることを確認します。
+C0の空コースも`items: []`のコース要素として現れます。`GET /api/classroom/courses/count`の合計件数とも一致することを確認します。
 
 ### エラー
 
@@ -241,7 +264,8 @@ C0の空コースはこのAPIだけではコース要素として現れません
 | `401` | `session_expired`         | 保存期限前にGoogle APIが401を返した。Cookieを再利用せず再ログインする                          |
 | `403` | `classroom_scope_missing` | セッションに必要scopeがない。OAuth連携を解除して再同意する                                     |
 | `403` | `classroom_forbidden`     | Google Classroomがアクセスを拒否した。生徒参加、API有効化、組織ポリシーを確認する              |
-| `502` | `classroom_unavailable`   | ネットワーク、タイムアウト、Google 5xx/429、形式不正など。待ってから有限回だけ再試行する       |
+| `503` | `classroom_rate_limited`  | Googleが429を返した。待ってから有限回だけ再試行する                                            |
+| `502` | `classroom_unavailable`   | ネットワーク、タイムアウト、Google 5xx、形式不正など。待ってから有限回だけ再試行する           |
 | `500` | `internal_error`          | 想定外のバックエンド障害。秘密情報を含めずサーバーログと再現条件を確認する                     |
 
 すべてのJSONレスポンスには`Cache-Control: private, no-store`が付きます。Google APIの生レスポンスや内部エラー本文はクライアントへ返りません。
@@ -252,19 +276,20 @@ C0の空コースはこのAPIだけではコース要素として現れません
 
 - Method: `GET`
 - Path parameter: Classroom APIが返した`formId`
-- Query/body: なし
+- Query: Classroom APIが返した`formIdType`を`formIdType=published`または`formIdType=standard`として必須指定。bodyなし
 - 認証: `taskwithform.sid` Cookie
-- 必要scope: `gmail.readonly`
+- 必要scope: `published`を照合する場合は`gmail.readonly`。`standard`はGmail検索を行わない
 - 有効なForm ID: 1〜512文字の英数字、`_`、`-`
 
 Form URL全体は渡しません。シェルでURLエンコードする処理を即席実装せず、まずClassroomレスポンスに含まれる検証用Form IDが上記の文字種だけであることを確認して使います。
 
 ```bash
 form_id='test-form-id-from-classroom-response'
+form_id_type='published'
 curl --silent --show-error --include \
   --cookie "$cookie_jar" \
-  "http://localhost:3000/api/gmail/forms/${form_id}/response"
-unset form_id
+  "http://localhost:3000/api/gmail/forms/${form_id}/response?formIdType=${form_id_type}"
+unset form_id form_id_type
 ```
 
 ### 成功レスポンス
@@ -279,6 +304,15 @@ HTTP `200`で次のいずれかを返します。
 { "status": "unreviewable" }
 ```
 
+standard IDを指定した場合はGmailを検索せず、構造的に照合できない理由を返します。
+
+```json
+{
+  "status": "unreviewable",
+  "reason": "standard_id_not_matchable"
+}
+```
+
 ```json
 { "status": "needsReview" }
 ```
@@ -291,19 +325,22 @@ HTTP `200`で次のいずれかを返します。
 
 `receiptReceivedAt`はGmailメッセージの受信日時をISO 8601 UTCで表した値で、回答日時やAPI確認時刻ではありません。`submitted`以外には付きません。
 
+回答控えメールに現れるURLはpublished IDです。standard IDからpublished IDを導出したり、同一性を推測したりしません。クライアントは`reason: standard_id_not_matchable`を「未回答」ではなく「このID空間では確認不能」と扱います。statusは`submitted | needsReview | unreviewable`の3値だけで、`answered`、`needs_review`、`pending`などの旧別名は受理しません。
+
 ### エラー
 
-| HTTP  | `error.code`         | 意味と対応                                                                     |
-| ----- | -------------------- | ------------------------------------------------------------------------------ |
-| `400` | `invalid_form_id`    | IDの文字種、長さ、パス形式が不正。Classroomレスポンスの`formId`を使う          |
-| `401` | `unauthenticated`    | Cookieなし、ローカル期限切れ、バックエンド再起動。再ログインする               |
-| `401` | `session_expired`    | 保存期限前にGoogle APIが401を返した。再ログインする                            |
-| `403` | `gmail_forbidden`    | scope欠落、Gmail権限、組織ポリシーによる拒否。再同意または管理者確認を行う     |
-| `503` | `gmail_rate_limited` | Gmail APIのレート制限。待ってから有限回だけ再試行する                          |
-| `502` | `gmail_unavailable`  | ネットワーク、タイムアウト、Google障害、レスポンス異常。時間を置いて再試行する |
-| `500` | `internal_error`     | 想定外のバックエンド障害。安全な再現条件だけを共有する                         |
+| HTTP  | `error.code`           | 意味と対応                                                                     |
+| ----- | ---------------------- | ------------------------------------------------------------------------------ |
+| `400` | `invalid_form_id`      | IDの文字種、長さ、パス形式が不正。Classroomレスポンスの`formId`を使う          |
+| `400` | `invalid_form_id_type` | `formIdType`の欠落、未知値、重複、未知query。Classroomレスポンスの値を使う     |
+| `401` | `unauthenticated`      | Cookieなし、ローカル期限切れ、バックエンド再起動。再ログインする               |
+| `401` | `session_expired`      | 保存期限前にGoogle APIが401を返した。再ログインする                            |
+| `403` | `gmail_forbidden`      | scope欠落、Gmail権限、組織ポリシーによる拒否。再同意または管理者確認を行う     |
+| `503` | `gmail_rate_limited`   | Gmail APIのレート制限。待ってから有限回だけ再試行する                          |
+| `502` | `gmail_unavailable`    | ネットワーク、タイムアウト、Google障害、レスポンス異常。時間を置いて再試行する |
+| `500` | `internal_error`       | 想定外のバックエンド障害。安全な再現条件だけを共有する                         |
 
-認証とscopeの検査がForm ID検査より先に行われるため、未認証の不正IDリクエストは`invalid_form_id`ではなく`unauthenticated`になります。
+認証をForm IDと`formIdType`の検査より先に行うため、未認証の不正リクエストは`invalid_form_id`ではなく`unauthenticated`になります。認証後はID、ID種別、必要なGmail scopeの順で検査します。
 
 ## 7. 権限・期限・レート制限の確認
 
@@ -311,8 +348,8 @@ HTTP `200`で次のいずれかを返します。
 
 1. 生徒役のGoogleアカウントから検証用OAuthアプリのアクセスを削除する。
 2. 再ログインし、Googleの同意画面が権限ごとの選択を許す場合だけ、Classroomを許可してGmailを許可しない。
-3. `GET /api/classroom/coursework/forms`が`200`、`GET /api/gmail/connection`または回答確認APIが`403 gmail_forbidden`になることを確認する。
-4. 確認後は連携を再度削除し、3つのscopeすべてへ再同意する。
+3. `GET /api/classroom/courses/items`が`200`、`GET /api/gmail/connection`またはpublished IDの回答確認APIが`403 gmail_forbidden`になることを確認する。
+4. 確認後は連携を再度削除し、5つのscopeすべてへ再同意する。
 
 組織ポリシーやGoogleの同意画面仕様により部分同意を選べない場合、実アカウントの設定やトークンを改変して再現してはいけません。その環境では、管理者がGmailを禁止した専用テストユーザーで確認するか、既存の自動テスト結果で権限分岐を確認し、実環境では「再現不可」と記録します。
 
@@ -329,7 +366,7 @@ HTTP `200`で次のいずれかを返します。
 ### rate limit
 
 - GmailのHTTP 429、またはGoogleが明示する一部のquota理由は`503 gmail_rate_limited`になります。
-- Classroomの429は専用コードにせず`502 classroom_unavailable`になります。
+- ClassroomのHTTP 429は`503 classroom_rate_limited`になります。
 - Gmail回答確認1回は最大10検索ページ、100候補、合計110リクエスト、30秒で打ち切ります。候補を完全走査できない場合は成功レスポンスの`needsReview`になる場合があります。
 - quota枯渇を意図的に起こす負荷試験は行いません。無限ループ、並列連打、自動即時再試行を禁止します。
 - 受け取った側は待機し、指数バックオフと試行回数上限を設けます。現行APIは`Retry-After`を返さないため、UIで正確な再開時刻を断定しません。
@@ -367,12 +404,13 @@ API失敗を回答状態として保存しません。永続化する回答状�
 | G1              | `submitted`と`receiptReceivedAt`       | `checkedAt`とともに保存                        | 回答済みと受信日時を表示                        |
 | G2              | `unreviewable`                         | 正常な確認結果として保存                       | 未提出と断定せず確認不能と表示                  |
 | G3              | `needsReview`                          | 正常な確認結果として保存                       | 要確認と再試行導線を表示                        |
+| standard ID     | 理由付き`unreviewable`                 | ID種別と理由を失わない                         | ID空間不一致として表示しGmail再試行をしない     |
 | APIエラー       | HTTP statusと`error.code`              | 新しい回答状態を保存せず既存正常値を維持       | `reviewing`を解除し、コード別の安全な案内を表示 |
 | logout/期限切れ | セッション破棄または401                | 別利用者へ残らないようユーザー固有データを削除 | ログインへ戻し、前利用者の状態を表示しない      |
 
 受け渡し時は次を満たします。
 
-- Backend: `formId`をClassroomレスポンスからGmail APIへそのまま接続でき、3状態と主要エラーを上記どおり返す。
+- Backend: Classroomレスポンスの`formIdType`を検査し、published IDだけをGmail APIへ接続して3状態と主要エラーを上記どおり返す。
 - DB: `receiptReceivedAt`は`submitted`だけに保持し、API確認時刻は別の`checkedAt`にする。メール本文、回答内容、message ID、tokenをschemaへ追加しない。
 - UI: `error.message`をそのまま表示せず`error.code`で分岐し、未知の値は一般エラーにする。複数Formの部分失敗を別Formの成功で上書きしない。
 - 共通: レスポンスfixtureはダミー値だけで作る。実レスポンスの丸ごと保存やNetworkパネルの無加工スクリーンショットを禁止する。

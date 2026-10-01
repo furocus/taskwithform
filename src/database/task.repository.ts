@@ -1,6 +1,8 @@
 import type {
+  ClassroomItemType,
   CourseTaskSnapshot,
   SyncState,
+  TaskFormReference,
   TaskRecord,
   TaskRecordInput,
 } from './database.types'
@@ -8,9 +10,10 @@ import { database as defaultDatabase, type TaskWithFormDatabase } from './db'
 
 export function createExternalKey(
   courseId: string,
-  courseWorkId: string,
+  itemType: ClassroomItemType,
+  itemId: string,
 ): string {
-  return JSON.stringify(['google-classroom', courseId, courseWorkId])
+  return JSON.stringify(['google-classroom', courseId, itemType, itemId])
 }
 
 function toTaskRecord(
@@ -24,12 +27,17 @@ function toTaskRecord(
     source: 'google-classroom',
     courseId: input.courseId,
     courseName: input.courseName,
-    courseWorkId: input.courseWorkId,
-    courseWorkType: input.courseWorkType,
+    itemType: input.itemType,
+    itemId: input.itemId,
+    creationTime: input.creationTime,
     subjectName: input.subjectName,
     title: input.title,
-    formUrls: [...input.formUrls],
+    forms: input.forms.map((form) => ({ ...form })),
     status: input.status,
+  }
+
+  if (input.courseWorkType !== undefined) {
+    record.courseWorkType = input.courseWorkType
   }
 
   if (input.description !== undefined) {
@@ -104,10 +112,10 @@ function compareTaskTieBreaker(a: TaskRecord, b: TaskRecord): number {
     return courseNameComparison
   }
 
-  const courseWorkIdComparison = a.courseWorkId.localeCompare(b.courseWorkId)
+  const itemIdComparison = a.itemId.localeCompare(b.itemId)
 
-  if (courseWorkIdComparison !== 0) {
-    return courseWorkIdComparison
+  if (itemIdComparison !== 0) {
+    return itemIdComparison
   }
 
   return a.externalKey.localeCompare(b.externalKey)
@@ -152,7 +160,8 @@ export class TaskRepository {
 
         const externalKey = createExternalKey(
           input.courseId,
-          input.courseWorkId,
+          input.itemType,
+          input.itemId,
         )
 
         if (incomingExternalKeys.has(externalKey)) {
@@ -234,10 +243,17 @@ export class TaskRepository {
     return this.database.tasks.toArray()
   }
 
-  async getUnsubmittedTasks(): Promise<TaskRecord[]> {
+  /**
+   * Returns everything the main task list shows: items this user has not
+   * submitted, plus items Classroom tracks no submission for (materials,
+   * announcements and course work assigned to other students). Only
+   * 'submitted' is excluded. The calendar and the deadline notifications keep
+   * using the stricter 'unsubmitted' queries below.
+   */
+  async getIncompleteTasks(): Promise<TaskRecord[]> {
     const tasks = await this.database.tasks
       .where('status')
-      .equals('unsubmitted')
+      .anyOf('unsubmitted', 'untracked')
       .toArray()
 
     return tasks.sort(compareTasksByDueDate)

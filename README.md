@@ -53,7 +53,7 @@ ClassroomとFormから課題情報を取得し、進捗を管理するWebアプ�
 
 ## Google OAuthを使って動作確認する
 
-Google Classroomのコースと課題、Gmailの接続状態を取得するには、Google CloudでOAuthクライアントを作成し、ローカル環境変数を設定します。
+Google Classroomのコース、課題・資料・ストリーム投稿、Gmailの接続状態を取得するには、Google CloudでOAuthクライアントを作成し、ローカル環境変数を設定します。
 
 1. Google CloudプロジェクトでGoogle Classroom APIを有効にする
 2. 同じプロジェクトでGmail APIを有効にする
@@ -75,17 +75,20 @@ FRONTEND_ORIGIN=http://localhost:5173
 
 `.env`には秘密情報が含まれるためGitへコミットしないでください。
 
-設定後、`./dev up`を実行し、`http://localhost:5173/login`からログインします。許可を求めるGoogle ClassroomとGmailのスコープは読み取り専用です。権限追加前にログイン済みの場合は、一度ログアウトして再ログインしてください。
+設定後、`./dev up`を実行し、`http://localhost:5173/login`からログインします。許可を求めるGoogle ClassroomとGmailのスコープは読み取り専用です。資料・ストリーム投稿用の権限追加前にログイン済みの場合は、アプリからログアウトし、Googleアカウント側の既存連携を解除してから再ログインしてください。
 
 認証後は次のバックエンドAPIを利用できます。
 
 - `GET /api/classroom/courses/count`: ACTIVEなコースの合計件数
-- `GET /api/classroom/courses/coursework`: ACTIVEなコースごとのPUBLISHEDな課題、本人の提出状況、添付されたGoogle FormのURL identifier（`formId`）・形式（`formIdType`）。課題が0件のコースも`courseWork`を空配列として返す
+- `GET /api/classroom/courses/items`: ACTIVEなコースごとのPUBLISHEDな課題・資料・ストリーム投稿とGoogle Form参照。全項目が`submissionStatus`を持ち、資料と投稿はFormを含む項目だけを返す。旧`/api/classroom/courses/coursework`は廃止
 - `GET /api/gmail/connection`: Gmail APIへ接続できる場合は`{"connected":true}`
+- `GET /api/gmail/forms/{formId}/response?formIdType=published|standard`: 回答控えの確認結果を`submitted`、`needsReview`、`unreviewable`の3値で返す
 
-Gmail接続確認ではメール一覧やメール本文を取得しません。`formId`はForms APIのcanonical resource IDではなく、Google Form URL中のopaque identifierです。
+`forms.gle`は認証情報を送らず、手動リダイレクト、許可ホスト限定、最大3 hop、各リクエスト5秒で解決します。失敗時は`resolution: "unresolved"`と理由を返し、同一URLの結果は1回の`items`リクエスト内だけで共有します。自動リトライやFormページのHTML解析は行いません。
 
-本人の提出状況はClassroom APIの`studentSubmissions.list`から取得しますが、現在要求している`classroom.coursework.me.readonly`で利用できるため、追加scopeやGoogle Cloud上の追加API有効化は不要です。取得した状態は`submitted`または`unsubmitted`へ正規化し、提出物の添付ファイルや回答内容はアプリへ取り込みません。
+`formId`はForms APIのcanonical resource IDではなく、Google Form URL中のopaque identifierです。`/forms/d/{id}/...`のstandard IDと`/forms/d/e/{id}/viewform`のpublished IDの同一性は推測しません。Gmail回答控えと照合できるのはpublished IDだけで、standard IDは理由`standard_id_not_matchable`付きの`unreviewable`になります。Googleの生レスポンス、Formタイトル、メール本文、アクセストークンはAPIレスポンスやログへ出しません。
+
+本人の提出状況はClassroom APIの`studentSubmissions.list`から取得しますが、現在要求している`classroom.coursework.me.readonly`で利用できるため、追加scopeやGoogle Cloud上の追加API有効化は不要です。取得した状態は`submitted`、`unsubmitted`、`untracked`の3値へ正規化し、提出物の添付ファイルや回答内容はアプリへ取り込みません。本人の提出レコードがない課題（教師が一部の生徒にだけ割り当てた課題）と、提出の概念がない資料・ストリーム投稿は`untracked`です。メイン課題一覧は`unsubmitted`と`untracked`を表示し、カレンダーと今日締切通知は`unsubmitted`だけを対象にします。
 
 認証情報はバックエンドのメモリ上だけに保持します。アクセストークンの期限切れまたはバックエンドの再起動後は、再ログインが必要です。
 
