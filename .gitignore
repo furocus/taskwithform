@@ -34,7 +34,14 @@ Thumbs.db
 
 # Local AI tool settings
 .codex/
-.agents/
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/adr-draft-from-code/
+!/.agents/skills/luna-code-writer/
+!/.agents/skills/worklog-summary/
+AGENTS.local.md
+AGENTS.override.md
 skills-lock.json
 
 # docs

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Luna Code Writer'
+  short_description: 'Delegate code implementation to Luna xhigh'
+  default_prompt: 'Use $luna-code-writer to implement this code change efficiently.'
