@@ -1,6 +1,9 @@
+import { isFormReferenceKey } from './database.types'
 import type {
   AnswerConfirmationInput,
   AnswerConfirmationRecord,
+  AnswerConfirmationStatus,
+  FormReferenceKey,
 } from './database.types'
 import { database as defaultDatabase, type TaskWithFormDatabase } from './db'
 
@@ -10,57 +13,90 @@ export class AnswerConfirmationRepository {
     private readonly database: TaskWithFormDatabase = defaultDatabase,
   ) {}
 
-  /**
-   * 回答確認結果を保存(新規追加)する
-   * @param input　id以外の回答確認情報
-   * @returns 生成されたレコードのid(number)
-   */
-  async save(input: AnswerConfirmationInput): Promise<number> {
-    const record: AnswerConfirmationRecord = {
-      formUrl: input.formUrl,
-      status: input.status,
-      confirmedAt: input.confirmedAt ?? new Date().toISOString(),
+  private assertFormReferenceKey(
+    value: string,
+  ): asserts value is FormReferenceKey {
+    if (!isFormReferenceKey(value)) {
+      throw new Error(
+        'formReferenceKey must be a canonical standard:<id> or published:<id> key.',
+      )
     }
-    return this.database.answerConfirmations.add(record)
   }
 
   /**
-   * IDによって単一の回答確認結果を取得します。
-   * @param id レコードID
+   * 回答確認結果を保存・更新します。
+   *
+   * 「配布項目 × Form参照」を1件の現在状態として扱うため、
+   * 同じ対象を再確認してもレコードを追加せず更新します。
    */
-  async getById(id: number): Promise<AnswerConfirmationRecord | undefined> {
-    return this.database.answerConfirmations.get(id)
+  async save(input: AnswerConfirmationInput): Promise<void> {
+    this.assertFormReferenceKey(input.formReferenceKey)
+    await this.database.answerConfirmations.put(input)
   }
 
   /**
-   * 指定した Form URL に該当する回答確認結果のリストを取得します。
-   * @param formUrl 対象のForm URL
+   * 「配布項目 × Form参照」に該当する現在の状態を取得します。
    */
-  async getByFormUrl(formUrl: string): Promise<AnswerConfirmationRecord[]> {
+  async get(
+    taskExternalKey: string,
+    formReferenceKey: string,
+  ): Promise<AnswerConfirmationRecord | undefined> {
+    this.assertFormReferenceKey(formReferenceKey)
+    return this.database.answerConfirmations.get([
+      taskExternalKey,
+      formReferenceKey,
+    ])
+  }
+
+  /**
+   * 指定した配布項目に紐づく回答確認結果を取得します。
+   */
+  async getByTaskExternalKey(
+    taskExternalKey: string,
+  ): Promise<AnswerConfirmationRecord[]> {
     return this.database.answerConfirmations
-      .where('formUrl')
-      .equals(formUrl)
+      .where('taskExternalKey')
+      .equals(taskExternalKey)
       .toArray()
   }
 
   /**
-   * 指定した ID の回答確認結果を更新します。
-   * @param id 更新対象のレコードID
-   * @param changes 更新内容
+   * 指定したForm参照に紐づく回答確認結果を取得します。
    */
-  async update(
-    id: number,
-    changes: Partial<AnswerConfirmationInput>,
-  ): Promise<void> {
-    await this.database.answerConfirmations.update(id, changes)
+  async getByFormReferenceKey(
+    formReferenceKey: string,
+  ): Promise<AnswerConfirmationRecord[]> {
+    this.assertFormReferenceKey(formReferenceKey)
+    return this.database.answerConfirmations
+      .where('formReferenceKey')
+      .equals(formReferenceKey)
+      .toArray()
   }
 
   /**
-   * 指定したIDのレコードのみを削除
-   * @param id 削除対象のレコードID
+   * 指定した回答確認状態のレコードを取得します。
    */
-  async delete(id: number): Promise<void> {
-    await this.database.answerConfirmations.delete(id)
+  async getByStatus(
+    status: AnswerConfirmationStatus,
+  ): Promise<AnswerConfirmationRecord[]> {
+    return this.database.answerConfirmations
+      .where('status')
+      .equals(status)
+      .toArray()
+  }
+
+  /**
+   * 「配布項目 × Form参照」の回答確認結果を削除します。
+   */
+  async delete(
+    taskExternalKey: string,
+    formReferenceKey: string,
+  ): Promise<void> {
+    this.assertFormReferenceKey(formReferenceKey)
+    await this.database.answerConfirmations.delete([
+      taskExternalKey,
+      formReferenceKey,
+    ])
   }
 
   /**
@@ -71,5 +107,4 @@ export class AnswerConfirmationRepository {
   }
 }
 
-// アプリ全体で使い回すシングルトンインスタンス
 export const answerConfirmationRepository = new AnswerConfirmationRepository()

@@ -6,11 +6,20 @@ import type {
 } from './database.types'
 import { database as defaultDatabase, type TaskWithFormDatabase } from './db'
 
+export function createExternalKey(courseId: string, itemId: string): string
 export function createExternalKey(
   courseId: string,
-  courseWorkId: string,
+  itemType: TaskRecordInput['itemType'],
+  itemId: string,
+): string
+export function createExternalKey(
+  courseId: string,
+  itemTypeOrItemId: string,
+  maybeItemId?: string,
 ): string {
-  return JSON.stringify(['google-classroom', courseId, courseWorkId])
+  const itemType = maybeItemId === undefined ? 'courseWork' : itemTypeOrItemId
+  const itemId = maybeItemId ?? itemTypeOrItemId
+  return JSON.stringify(['google-classroom', courseId, itemType, itemId])
 }
 
 function toTaskRecord(
@@ -22,13 +31,19 @@ function toTaskRecord(
     id,
     externalKey,
     source: 'google-classroom',
+
     courseId: input.courseId,
     courseName: input.courseName,
-    courseWorkId: input.courseWorkId,
-    courseWorkType: input.courseWorkType,
+
+    itemType: input.itemType,
+    itemId: input.itemId,
+    creationTime: input.creationTime,
+
     subjectName: input.subjectName,
     title: input.title,
-    formUrls: [...input.formUrls],
+
+    forms: input.forms.map((form) => ({ ...form })),
+
     status: input.status,
   }
 
@@ -51,7 +66,6 @@ function toTaskRecord(
   return record
 }
 
-//日付形式(YYYY-MM-DD)チェック
 function validateDateString(value: string, name: string): void {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw new Error(`${name} must be in YYYY-MM-DD format.`)
@@ -104,10 +118,10 @@ function compareTaskTieBreaker(a: TaskRecord, b: TaskRecord): number {
     return courseNameComparison
   }
 
-  const courseWorkIdComparison = a.courseWorkId.localeCompare(b.courseWorkId)
+  const itemIdComparison = a.itemId.localeCompare(b.itemId)
 
-  if (courseWorkIdComparison !== 0) {
-    return courseWorkIdComparison
+  if (itemIdComparison !== 0) {
+    return itemIdComparison
   }
 
   return a.externalKey.localeCompare(b.externalKey)
@@ -118,15 +132,6 @@ export class TaskRepository {
     private readonly database: TaskWithFormDatabase = defaultDatabase,
   ) {}
 
-  /**
-   * Every table the course synchronization writes.
-   *
-   * `replaceActiveCourseSnapshots` wraps `replaceCourseSnapshot` and
-   * `removeInactiveCourses`, and Dexie turns their inner `transaction()` calls
-   * into sub transactions of that outer one, which commit and roll back with
-   * it. That only holds while all three declare the same tables, so a table
-   * added to one of these writes has to be added here.
-   */
   private get syncTables() {
     return [this.database.tasks, this.database.syncStates] as const
   }
@@ -137,9 +142,11 @@ export class TaskRepository {
         .where('courseId')
         .equals(snapshot.courseId)
         .toArray()
+
       const existingByExternalKey = new Map(
         existingTasks.map((task) => [task.externalKey, task]),
       )
+
       const incomingExternalKeys = new Set<string>()
       const incomingRecords: TaskRecord[] = []
 
@@ -152,7 +159,8 @@ export class TaskRepository {
 
         const externalKey = createExternalKey(
           input.courseId,
-          input.courseWorkId,
+          input.itemType,
+          input.itemId,
         )
 
         if (incomingExternalKeys.has(externalKey)) {
@@ -160,8 +168,10 @@ export class TaskRepository {
         }
 
         incomingExternalKeys.add(externalKey)
+
         const id =
           existingByExternalKey.get(externalKey)?.id ?? crypto.randomUUID()
+
         incomingRecords.push(toTaskRecord(input, id, externalKey))
       }
 
@@ -182,13 +192,6 @@ export class TaskRepository {
     })
   }
 
-  /**
-   * Replaces every ACTIVE course snapshot and drops the courses that are no
-   * longer ACTIVE, in a single transaction. A failure on any course leaves the
-   * previously stored courses untouched instead of committing a partial sync.
-   *
-   * See `syncTables` for the transaction scope this relies on.
-   */
   async replaceActiveCourseSnapshots(
     snapshots: readonly CourseTaskSnapshot[],
   ): Promise<void> {
@@ -213,9 +216,11 @@ export class TaskRepository {
         this.database.tasks.toArray(),
         this.database.syncStates.toArray(),
       ])
+
       const deletedTaskIds = tasks
         .filter((task) => !activeCourseIdSet.has(task.courseId))
         .map((task) => task.id)
+
       const deletedSyncStateIds = syncStates
         .filter((state) => !activeCourseIdSet.has(state.courseId))
         .map((state) => state.courseId)
@@ -249,6 +254,7 @@ export class TaskRepository {
   ): Promise<TaskRecord[]> {
     validateDateString(startDate, 'startDate')
     validateDateString(endDate, 'endDate')
+
     if (startDate > endDate) {
       throw new Error('startDate must not be after endDate.')
     }
@@ -274,6 +280,7 @@ export class TaskRepository {
       }
 
       const tasksForDate = grouped[task.dueDate] ?? []
+
       tasksForDate.push(task)
       grouped[task.dueDate] = tasksForDate
 
